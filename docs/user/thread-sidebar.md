@@ -127,7 +127,9 @@ for custom configuration.
 
 On web and desktop, use **Agents** to follow work delegated to subagents.
 
-Expand a tool call in the conversation to see its full command and output.
+Expand a tool call to see its highlighted command and output preview. Command cards show the action and status; recognized PowerShell wrappers are shortened for display, with the original invocation still available.
+
+Use **Open retained output** to read the output saved for that call in a separate viewer. Large outputs are paged; filter lines or copy the current page. Provider-side truncation cannot be recovered. **Collapse details** stays below the bounded preview so long output does not require scrolling through the conversation.
 Summaries shorten shell wrappers and can still describe the latest call after it
 finishes; the call's own result shows its status.
 

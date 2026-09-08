@@ -1,5 +1,6 @@
 import { worktreeSetupAgentStarted } from "@t3tools/client-runtime/worktree-setup";
 export { worktreeSetupAgentStarted } from "@t3tools/client-runtime/worktree-setup";
+import { toolCommandPresentation } from "./toolCommandPresentation";
 import * as Equal from "effect/Equal";
 import { shallow } from "zustand/vanilla/shallow";
 import { renderCodexDirectivesForCopy } from "@t3tools/client-runtime/codex-markdown-directives";
@@ -93,7 +94,9 @@ export function liveWorkEntryLabel(
             : status === "stopped"
               ? "Stopped"
               : "Ran";
-    return `${verb} ${commandProgramName(command) ?? "command"}`;
+    const presentation = toolCommandPresentation(command);
+    if (presentation.action === "Read") return `${verb} · Read ${presentation.label}`;
+    return `${verb} ${commandProgramName(command) ?? "command"} · ${presentation.label.replace(/\s+/g, " ").slice(0, 180)}`;
   }
   return workEntryDisplayLabel(entry, workspaceRoot);
 }

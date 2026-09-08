@@ -1,3 +1,4 @@
+import { readToolOutput } from "../toolOutputQuery.ts";
 import {
   AgentSessionImportSource,
   ApprovalRequestId,
@@ -3759,6 +3760,8 @@ pending_approval_requests AS (
 
   return {
     getCommandReadModel,
+    getToolOutput: (input) =>
+      readToolOutput(input).pipe(Effect.provideService(SqlClient.SqlClient, sql)),
     getUserInputActivity,
     listActivitiesByKind,
     getSnapshot,

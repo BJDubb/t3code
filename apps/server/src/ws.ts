@@ -1916,6 +1916,12 @@ const makeWsRpcLayer = (
             ),
             { "rpc.aggregate": "orchestration" },
           ),
+        [ORCHESTRATION_WS_METHODS.getToolOutput]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATION_WS_METHODS.getToolOutput,
+            projectionSnapshotQuery.getToolOutput(input),
+            { "rpc.aggregate": "orchestration" },
+          ),
         [ORCHESTRATION_WS_METHODS.getWorkflowScript]: (input) =>
           observeRpcEffect(
             ORCHESTRATION_WS_METHODS.getWorkflowScript,

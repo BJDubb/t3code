@@ -1,6 +1,8 @@
 import { ArrowUpIcon, ClockIcon } from "lucide-react";
 import { ReadOnlySourcePreview } from "../files/AttachmentFilePreview";
 import { useRightPanelStore } from "~/rightPanelStore";
+import { ToolCommandPanel } from "./ToolCommandPanel";
+import { toolCommandPresentation } from "./toolCommandPresentation";
 import {
   getQuestionAnswerPreview,
   getQuestionAnswerText,
@@ -3072,7 +3074,7 @@ function ExpandedWorkGroupEntries({
         aria-label="Tool calls"
         data-tool-group-scroll
         className={cn(
-          "scrollbar-gutter-stable max-h-[min(18rem,50dvh)] scroll-py-6 overflow-x-hidden rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70",
+          "scrollbar-gutter-stable max-h-[min(32rem,65dvh)] scroll-py-6 overflow-x-hidden rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70",
           getVirtualizedScrollFadeClassName(fades),
         )}
       />
@@ -4786,7 +4788,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   onToggleEntry?: ((collapsed: boolean) => void) | undefined;
 }) {
   const { workEntry, workspaceRoot, isExpandedToolGroupEntry, displayLabel } = props;
-  const { threadRef, onImageExpand, timestampFormat } = use(TimelineRowCtx);
+  const { threadRef, onImageExpand, timestampFormat, resolvedTheme } = use(TimelineRowCtx);
   const groupView = use(WorkGroupViewCtx);
   const [expanded, setExpanded] = useState(
     () => groupView?.state.expandedEntries.has(workEntry.id) ?? false,
@@ -4814,7 +4816,18 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
     showWarningIndicator || showDestructiveRowStyle
       ? undefined
       : (workEntry.toolIcon ?? workEntry.toolSource?.icon);
-  const previewText = displayLabel ?? workEntryDisplayLabel(workEntry, workspaceRoot);
+  const commandPresentation = workEntry.command ? toolCommandPresentation(workEntry.command) : null;
+  const imagePath = workEntryViewedImagePath(workEntry);
+  const actionLabel =
+    commandPresentation?.action ??
+    (imagePath ? "Image" : workEntry.changedFiles?.length ? "Edit" : null);
+  const previewText = workEntry.questionAnswer
+    ? "Question answer submitted"
+    : imagePath
+      ? imagePath.replace(/\\/g, "/").split("/").at(-1)!
+      : (commandPresentation?.label ??
+        displayLabel ??
+        workEntryDisplayLabel(workEntry, workspaceRoot));
   const answerPreview = workEntry.questionAnswer
     ? getQuestionAnswerPreview(workEntry.questionAnswer)
     : null;
@@ -4828,6 +4841,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
       : null;
   const canExpand =
     Boolean(workEntry.questionAnswer) ||
+    Boolean(workEntry.command) ||
     (showFailedIndicator && previewText.trim().length > 0) ||
     (workEntry.itemType === "mcp_tool_call" && workEntry.toolData !== undefined) ||
     Boolean(
@@ -4863,7 +4877,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
     : showDestructiveRowStyle
       ? "font-medium text-destructive"
       : workLogEntryIsToolLike(workEntry)
-        ? "text-secondary-label"
+        ? "text-foreground/90"
         : "text-foreground/80";
   const accessiblePreview = [previewText, answerPreview].filter(Boolean).join(": ");
   const accessibleDisplayText = showFailedIndicator
@@ -4877,6 +4891,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
         "aria-expanded": expanded,
         onClick: toggleExpanded,
         onKeyDown: (e: KeyboardEvent<HTMLDivElement>) => {
+          if (e.target !== e.currentTarget) return;
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
             toggleExpanded();
@@ -4888,15 +4903,16 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   return (
     <div
       className={cn(
-        "group/timeline-row relative flex flex-col rounded-md px-0.5 transition-colors",
-        isExpandedToolGroupEntry ? "py-0" : "py-0.5",
-        expanded && "mb-1",
+        "group/timeline-row relative flex flex-col rounded-lg border border-border/60 bg-card/40 px-2 transition-colors",
+        isExpandedToolGroupEntry ? "my-1 py-1" : "my-1 py-1.5",
         canExpand &&
           "cursor-pointer hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70",
       )}
-      {...rowToggleProps}
     >
-      <div className="flex select-none items-center gap-1.5 transition-[opacity,translate] duration-200">
+      <div
+        {...rowToggleProps}
+        className="flex select-none items-center gap-1.5 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
         <span
           className={iconWrapperClass}
           role={showFailedIndicator ? "img" : undefined}
@@ -4915,12 +4931,17 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
               <span
                 className={cn(
                   answerPreview ? "shrink-0" : "min-w-0 flex-1",
-                  expanded ? "whitespace-pre-wrap break-words select-text" : "truncate",
+                  expanded && !commandPresentation ? "whitespace-pre-wrap break-words select-text" : "truncate",
                   headingClass,
                 )}
                 onClick={expanded ? stopRowToggleWhileSelectingText : undefined}
                 onPointerDown={expanded ? stopRowToggle : undefined}
               >
+                {actionLabel ? (
+                  <span className="mr-2 text-xs font-semibold text-info-foreground">
+                    {actionLabel}
+                  </span>
+                ) : null}
                 {previewText}
               </span>
               {answerPreview ? (
@@ -4939,6 +4960,26 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
               ) : null}
             </p>
           </div>
+          {workLogEntryIsToolLike(workEntry) ? (
+            <span
+              className={cn(
+                "shrink-0 text-[11px]",
+                showFailedIndicator ? "text-destructive" : "text-muted-foreground",
+              )}
+            >
+              {showFailedIndicator
+                ? "Failed"
+                : workEntry.toolLifecycleStatus === "inProgress"
+                  ? "Running"
+                  : workEntry.toolLifecycleStatus === "stopped"
+                    ? "Stopped"
+                    : workEntry.toolLifecycleStatus === "declined"
+                      ? "Declined"
+                      : workEntry.toolLifecycleStatus === "completed"
+                        ? "Done"
+                        : ""}
+            </span>
+          ) : null}
           {showFailedIndicator &&
           !showDestructiveRowStyle &&
           !toolIconAcceptsTint(entryIconName, entryToolIcon) ? (
@@ -4981,13 +5022,27 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
       {expanded && workEntry.questionAnswer ? (
         <QuestionAnswerHistory answer={workEntry.questionAnswer} />
       ) : null}
-      {expanded && canExpand && expandedBody && !workEntry.questionAnswer ? (
+      {expanded && canExpand && (expandedBody || workEntry.command) && !workEntry.questionAnswer ? (
         <div
-          className="mt-1 ms-7 cursor-default rounded-md bg-muted/40 px-3 py-2"
+          className="mt-2 mb-1 ms-7 cursor-default rounded-md bg-muted/40"
           onClick={stopRowToggle}
           onPointerDown={stopRowToggle}
         >
-          <pre className={toolCallExpandedBodyClassName}>{expandedBody}</pre>
+          {workEntry.command ? (
+            <ToolCommandPanel
+              threadRef={threadRef ?? undefined}
+              activityId={workEntry.id}
+              command={workEntry.command}
+              rawCommand={workEntry.rawCommand}
+              output={workEntry.detail}
+              theme={resolvedTheme}
+              onCollapse={toggleExpanded}
+            />
+          ) : (
+            <pre className={`${toolCallExpandedBodyClassName} p-3 text-foreground/90`}>
+              {expandedBody}
+            </pre>
+          )}
         </div>
       ) : null}
     </div>

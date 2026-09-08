@@ -744,16 +744,24 @@ describe("work entry labels", () => {
 
   it("keeps command summaries compact without replacing the full command in expanded rows", () => {
     const commandEntry = { ...entry, command: "vp test run", detail: "All tests passed" };
-    expect(liveWorkEntryLabel(commandEntry, undefined, true)).toBe("Running vp");
-    expect(liveWorkEntryLabel(commandEntry, undefined, false)).toBe("Ran vp");
+    expect(liveWorkEntryLabel(commandEntry, undefined, true)).toBe(
+      `Running vp · ${commandEntry.command}`,
+    );
+    expect(liveWorkEntryLabel(commandEntry, undefined, false)).toBe(
+      `Ran vp · ${commandEntry.command}`,
+    );
     expect(workEntryDisplayLabel(commandEntry, undefined)).toBe("vp test run");
   });
 
   it("summarizes the program inside a shell wrapper while preserving the expanded command", () => {
     const command = "/bin/zsh -lc 'vp test run apps/web/src/session-logic.test.ts'";
     const commandEntry = { ...entry, command };
-    expect(liveWorkEntryLabel(commandEntry, undefined, true)).toBe("Running vp");
-    expect(liveWorkEntryLabel(commandEntry, undefined, false)).toBe("Ran vp");
+    expect(liveWorkEntryLabel(commandEntry, undefined, true)).toBe(
+      `Running vp · ${commandEntry.command}`,
+    );
+    expect(liveWorkEntryLabel(commandEntry, undefined, false)).toBe(
+      `Ran vp · ${commandEntry.command}`,
+    );
     expect(workEntryDisplayLabel(commandEntry, undefined)).toBe(command);
   });
 
@@ -771,8 +779,12 @@ describe("work entry labels", () => {
         command: "/bin/bash -lc 'vp test run'",
         toolLifecycleStatus,
       };
-      expect(liveWorkEntryLabel(commandEntry, undefined, true)).toBe(liveLabel);
-      expect(liveWorkEntryLabel(commandEntry, undefined, false)).toBe(settledLabel);
+      expect(liveWorkEntryLabel(commandEntry, undefined, true)).toBe(
+        `${liveLabel} · ${commandEntry.command}`,
+      );
+      expect(liveWorkEntryLabel(commandEntry, undefined, false)).toBe(
+        `${settledLabel} · ${commandEntry.command}`,
+      );
     },
   );
 

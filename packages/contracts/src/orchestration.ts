@@ -35,6 +35,7 @@ import {
 export const ORCHESTRATION_WS_METHODS = {
   dispatchCommand: "orchestration.dispatchCommand",
   getWorkflowScript: "orchestration.getWorkflowScript",
+  getToolOutput: "orchestration.getToolOutput",
   getTurnDiff: "orchestration.getTurnDiff",
   getFullThreadDiff: "orchestration.getFullThreadDiff",
   searchThreads: "orchestration.searchThreads",
@@ -2334,7 +2335,29 @@ export class OrchestrationGetWorkflowScriptError extends Schema.TaggedError<Orch
   }
 }
 
+export const OrchestrationGetToolOutputInput = Schema.Struct({
+  threadId: ThreadId,
+  activityId: EventId,
+  offset: NonNegativeInt,
+});
+export type OrchestrationGetToolOutputInput = typeof OrchestrationGetToolOutputInput.Type;
+export const OrchestrationGetToolOutputResult = Schema.Struct({
+  available: Schema.Boolean,
+  contents: Schema.String,
+  totalChars: NonNegativeInt,
+  nextOffset: Schema.NullOr(NonNegativeInt),
+});
+export type OrchestrationGetToolOutputResult = typeof OrchestrationGetToolOutputResult.Type;
+export class OrchestrationGetToolOutputError extends Schema.TaggedError<OrchestrationGetToolOutputError>()(
+  "OrchestrationGetToolOutputError",
+  { message: TrimmedNonEmptyString },
+) {}
+
 export const OrchestrationRpcSchemas = {
+  getToolOutput: {
+    input: OrchestrationGetToolOutputInput,
+    output: OrchestrationGetToolOutputResult,
+  },
   dispatchCommand: {
     input: ClientOrchestrationCommand,
     output: DispatchResult,

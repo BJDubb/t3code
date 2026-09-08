@@ -7,6 +7,9 @@
  * @module ProjectionSnapshotQuery
  */
 import type {
+  OrchestrationGetToolOutputInput,
+  OrchestrationGetToolOutputResult,
+  OrchestrationGetToolOutputError,
   AgentSessionImportSource,
   ApprovalRequestId,
   CheckpointRef,
@@ -77,6 +80,10 @@ export interface ProjectionThreadDetailQuery {
  * ProjectionSnapshotQueryShape - Service API for read-model snapshots.
  */
 export interface ProjectionSnapshotQueryShape {
+  readonly getToolOutput: (
+    input: OrchestrationGetToolOutputInput,
+  ) => Effect.Effect<OrchestrationGetToolOutputResult, OrchestrationGetToolOutputError>;
+
   /** Read the latest request or resolution without loading the thread history. */
   readonly getUserInputActivity: (input: {
     readonly threadId: ThreadId;

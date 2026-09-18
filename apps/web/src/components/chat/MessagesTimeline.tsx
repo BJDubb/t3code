@@ -1,8 +1,9 @@
+import { SavedEditPanel, ToolDetailsPanel } from "./ToolDetailsPanel";
 import { ArrowUpIcon, ClockIcon } from "lucide-react";
 import { ReadOnlySourcePreview } from "../files/AttachmentFilePreview";
 import { useRightPanelStore } from "~/rightPanelStore";
 import { ToolCommandPanel } from "./ToolCommandPanel";
-import { toolCommandPresentation } from "./toolCommandPresentation";
+import { commandNames, toolCommandPresentation } from "./toolCommandPresentation";
 import {
   getQuestionAnswerPreview,
   getQuestionAnswerText,
@@ -140,7 +141,6 @@ import { Button } from "../ui/button";
 import type { QueuedComposerMessage } from "../../queuedMessageStore";
 import { useAssetUrlRefresh, useAssetUrls, useAssetUrlState } from "../../assets/assetUrls";
 import { MediaVideoPlayer } from "../media/MediaVideoPlayer";
-import { getVirtualizedScrollFadeClassName } from "../ui/scroll-area";
 import {
   buildAttachmentVideoAsset,
   buildAttachmentVideoPreview,
@@ -190,8 +190,6 @@ import {
   resolveTimelineMinimapIndexFromPointer,
   resolveTimelineMinimapInteractiveWidth,
   resolveTimelineMinimapTopPercent,
-  resolveWorkGroupScrollIndex,
-  shouldFollowWorkGroupAppend,
   shouldPreserveAssistantLineBreaks,
   toolGroupAction,
   workEntryDisplayLabel,
@@ -201,7 +199,6 @@ import {
   type MessagesTimelineRow,
   TIMELINE_MINIMAP_MIN_ITEMS,
   type TimelineLatestTurn,
-  type WorkGroupScrollAnchor,
 } from "./MessagesTimeline.logic";
 import { TerminalContextInlineChip } from "./TerminalContextInlineChip";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
@@ -325,7 +322,7 @@ const TimelineRowCtx = createContext<TimelineRowSharedState>(null!);
 const TimelineRowActivityCtx = createContext<TimelineRowActivityState>(null!);
 
 interface WorkGroupViewState {
-  scrollPositions: Map<string, WorkGroupScrollAnchor>;
+  visibleEntryCounts: Map<string, number>;
   expandedEntries: Set<string>;
 }
 
@@ -593,7 +590,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   const workGroupViewState = useMemo<WorkGroupViewState>(
     () =>
       rememberedPosition?.disclosures?.workGroupState ?? {
-        scrollPositions: new Map(),
+        visibleEntryCounts: new Map(),
         expandedEntries: new Set(),
       },
     [listIdentityKey, rememberedPosition],
@@ -779,6 +776,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
         runningTurnId,
         expandedTurnIds: paintedExpandedTurnIds,
         expandedWorkGroupIds: paintedExpandedWorkGroupIds,
+        ungroupToolCalls: true,
         isWorking,
         activeTurnStartedAt,
         turnDiffSummaries,
@@ -2885,7 +2883,7 @@ function WorkingTimer({ createdAt }: { createdAt: string }) {
 // re-render only the affected row, not the entire list.
 // ---------------------------------------------------------------------------
 
-/** Renders standalone activity or one bounded, virtualized expanded tool group. */
+/** Renders standalone activity or expanded tool calls in the conversation flow. */
 const WorkGroupSection = memo(function WorkGroupSection({
   anchorKey,
   disclosureAnchorKey = anchorKey,
@@ -2905,8 +2903,8 @@ const WorkGroupSection = memo(function WorkGroupSection({
     [disclosureAnchorKey, onToggleWorkEntry],
   );
   const nonEmptyEntries = useMemo(
-    () => groupedEntries.filter((entry) => workEntryIsVisibleInGroup(entry, isExpandedToolGroup)),
-    [groupedEntries, isExpandedToolGroup],
+    () => groupedEntries.filter((entry) => workEntryIsVisibleInGroup(entry, true)),
+    [groupedEntries],
   );
 
   if (nonEmptyEntries.length === 0) return null;
@@ -2952,24 +2950,10 @@ function ExpandedWorkGroupEntries({
   workspaceRoot: string | undefined;
 }) {
   const { workGroupViewState: viewState, onToggleWorkEntry } = use(TimelineRowCtx);
-  const [initialScrollIndex] = useState(() =>
-    resolveWorkGroupScrollIndex(entries, viewState.scrollPositions.get(anchorKey)),
+  // Reveal long histories in batches without making the group its own scroll area.
+  const [visibleCount, setVisibleCount] = useState(
+    () => viewState.visibleEntryCounts.get(anchorKey) ?? 50,
   );
-  const [restoringPosition, setRestoringPosition] = useState(initialScrollIndex !== undefined);
-  const listRef = useRef<LegendListRef>(null);
-  const [fades, setFades] = useState({ top: false, bottom: false, viewportHeight: 0 });
-  const [appendState, setAppendState] = useState({ entries, follow: false });
-  // Capture the pre-change edge once per incoming array, before new layout
-  // metrics arrive. Edge/viewport changes never turn a status update into a follow.
-  if (appendState.entries !== entries) {
-    setAppendState({
-      entries,
-      follow:
-        fades.viewportHeight > 0 &&
-        shouldFollowWorkGroupAppend(appendState.entries, entries, fades.bottom ? Infinity : 0),
-    });
-  }
-
   const groupView = useMemo(
     () => ({
       state: viewState,
@@ -2977,112 +2961,36 @@ function ExpandedWorkGroupEntries({
     }),
     [disclosureAnchorKey, onToggleWorkEntry, viewState],
   );
-  const updateScrollFades = useCallback(() => {
-    const element = listRef.current?.getScrollableNode();
-    if (!element) return;
-    const distanceFromEnd = element.scrollHeight - element.clientHeight - element.scrollTop;
-    const viewportHeight = element.clientHeight;
-    const top = element.scrollTop > 1;
-    const bottom = distanceFromEnd > 1;
-    setFades((previous) =>
-      previous.top === top &&
-      previous.bottom === bottom &&
-      previous.viewportHeight === viewportHeight
-        ? previous
-        : { top, bottom, viewportHeight },
-    );
-  }, []);
-
-  const handleScroll = useCallback(() => {
-    const state = listRef.current?.getState();
-    const position = state && resolveWorkGroupScrollAnchor(state);
-    if (position) {
-      viewState.scrollPositions.set(anchorKey, {
-        entryId: position.rowId,
-        offset: position.offsetWithinRow,
-      });
-    }
-    updateScrollFades();
-  }, [anchorKey, updateScrollFades, viewState]);
-
-  const handleLoad = useCallback(() => {
-    const list = listRef.current;
-    const element = list?.getScrollableNode();
-    if (initialScrollIndex && list && element) {
-      // Bootstrap can report the restored target before the DOM has applied it.
-      // Reconcile once at load, before releasing the measured anchor row.
-      const offset = Math.max(
-        0,
-        Math.min(list.getState().scroll, element.scrollHeight - element.clientHeight),
-      );
-      if (Math.abs(element.scrollTop - offset) > 1) {
-        void list.scrollToOffset({ offset, animated: false });
-      }
-    }
-    setRestoringPosition(false);
-  }, [initialScrollIndex]);
-
-  useLayoutEffect(() => {
-    const element = listRef.current?.getScrollableNode();
-    if (!element) return;
-    updateScrollFades();
-    const observer = new ResizeObserver(updateScrollFades);
-    observer.observe(element);
-    if (element.firstElementChild) observer.observe(element.firstElementChild);
-    return () => observer.disconnect();
-  }, [updateScrollFades]);
-
-  const renderEntry = useCallback(
-    ({ item }: { item: TimelineWorkEntry }) => (
-      <SimpleWorkEntryRow
-        key={item.id}
-        workEntry={item}
-        workspaceRoot={workspaceRoot}
-        isExpandedToolGroupEntry
-      />
-    ),
-    [workspaceRoot],
-  );
-
+  const remaining = entries.length - visibleCount;
   return (
     <WorkGroupViewCtx value={groupView}>
-      <LegendList
-        ref={listRef}
-        data={entries}
-        extraData={workspaceRoot}
-        keyExtractor={workEntryKey}
-        renderItem={renderEntry}
-        estimatedItemSize={24}
-        drawDistance={240}
-        recycleItems
-        {...(initialScrollIndex ? { initialScrollIndex } : {})}
-        maintainScrollAtEnd={
-          appendState.follow ? { animated: false, on: { dataChange: true } } : false
-        }
-        maintainScrollAtEndThreshold={1 / Math.max(1, fades.viewportHeight)}
-        // Measure the restored row even when an intra-row offset puts its
-        // estimated bounds outside the list's small bootstrap render window.
-        {...(restoringPosition && initialScrollIndex
-          ? { alwaysRender: { indices: [initialScrollIndex.index] } }
-          : {})}
-        maintainVisibleContentPosition
-        onLoad={handleLoad}
-        onScroll={handleScroll}
-        onLayout={updateScrollFades}
-        tabIndex={0}
-        role="region"
-        aria-label="Tool calls"
-        data-tool-group-scroll
-        className={cn(
-          "scrollbar-gutter-stable max-h-[min(32rem,65dvh)] scroll-py-6 overflow-x-hidden rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70",
-          getVirtualizedScrollFadeClassName(fades),
-        )}
-      />
+      <section aria-label="Tool calls" className="space-y-1">
+        {entries.slice(0, visibleCount).map((entry) => (
+          <SimpleWorkEntryRow
+            key={entry.id}
+            workEntry={entry}
+            workspaceRoot={workspaceRoot}
+            isExpandedToolGroupEntry
+          />
+        ))}
+        {remaining > 0 ? (
+          <button
+            type="button"
+            className="ms-7 rounded px-2 py-1 text-xs text-info-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={() => {
+              onToggleWorkEntry(disclosureAnchorKey, false);
+              const next = visibleCount + 50;
+              viewState.visibleEntryCounts.set(anchorKey, next);
+              setVisibleCount(next);
+            }}
+          >
+            Show {Math.min(50, remaining)} more calls ({remaining} remaining)
+          </button>
+        ) : null}
+      </section>
     </WorkGroupViewCtx>
   );
 }
-
-const workEntryKey = (entry: TimelineWorkEntry) => entry.id;
 
 function ActivityShimmerOverlay({ children }: { children: ReactNode }) {
   return (
@@ -3179,7 +3087,7 @@ function LiveActivityContent({
         <span
           className={cn(
             "flex size-6 shrink-0 items-center justify-center",
-            failed ? failedToolIconClassName : highlighted ? "text-foreground" : "text-icon-muted",
+            failed ? failedToolIconClassName : "text-icon-muted",
           )}
           role={announceFailure ? "img" : undefined}
           aria-label={announceFailure ? "Tool call failed" : undefined}
@@ -3188,7 +3096,7 @@ function LiveActivityContent({
             icon={toolIcon}
             fallbackName={iconName}
             className="block size-4 shrink-0 stroke-[1.8]"
-            muted={!highlighted}
+            muted={false}
           />
         </span>
       ) : null}
@@ -4480,9 +4388,6 @@ function buildToolCallExpandedBody(
     seen.add(text);
     blocks.push(text);
   };
-  if (workEntry.itemType === "mcp_tool_call" && workEntry.toolData !== undefined) {
-    addBlock(`MCP call\n${JSON.stringify(workEntry.toolData, null, 2)}`);
-  }
   const command = workEntry.command?.trim();
   const raw = workEntryRawCommand(workEntry);
   if (command === visibleLabel.trim()) {
@@ -4712,7 +4617,7 @@ function AgentSpawnMemberRow({
       className={cn(
         "flex flex-col rounded-md px-1 py-0.5 transition-colors",
         canExpand &&
-          "cursor-pointer hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70",
+          "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70",
       )}
     >
       <div className="flex select-none items-center gap-1.5">
@@ -4816,18 +4721,23 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
     showWarningIndicator || showDestructiveRowStyle
       ? undefined
       : (workEntry.toolIcon ?? workEntry.toolSource?.icon);
-  const commandPresentation = workEntry.command ? toolCommandPresentation(workEntry.command) : null;
+  const commandPresentation = workEntry.command
+    ? toolCommandPresentation(
+        workEntry.rawCommand ?? workEntry.command,
+        workEntry.toolTitle,
+        displayLabel,
+      )
+    : null;
   const imagePath = workEntryViewedImagePath(workEntry);
-  const actionLabel =
-    commandPresentation?.action ??
-    (imagePath ? "Image" : workEntry.changedFiles?.length ? "Edit" : null);
   const previewText = workEntry.questionAnswer
     ? "Question answer submitted"
     : imagePath
       ? imagePath.replace(/\\/g, "/").split("/").at(-1)!
-      : (commandPresentation?.label ??
-        displayLabel ??
-        workEntryDisplayLabel(workEntry, workspaceRoot));
+      : workEntry.changedFiles?.length
+        ? `Edited ${workEntry.changedFiles.map((path) => path.replace(/\\/g, "/").split("/").at(-1)).join(", ")}`
+        : (commandPresentation?.label ??
+          displayLabel ??
+          workEntryDisplayLabel(workEntry, workspaceRoot));
   const answerPreview = workEntry.questionAnswer
     ? getQuestionAnswerPreview(workEntry.questionAnswer)
     : null;
@@ -4861,7 +4771,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
     : null;
   // Reserve destructive row styling for severe failures, not routine tool errors.
   const iconWrapperClass = cn(
-    "flex size-6 shrink-0 items-center justify-center",
+    "flex size-6 shrink-0 items-center justify-center ",
     showWarningIndicator
       ? "text-warning"
       : showDestructiveRowStyle
@@ -4903,15 +4813,15 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   return (
     <div
       className={cn(
-        "group/timeline-row relative flex flex-col rounded-lg border border-border/60 bg-card/40 px-2 transition-colors",
+        "group/timeline-row relative flex flex-col px-0.5",
         isExpandedToolGroupEntry ? "my-1 py-1" : "my-1 py-1.5",
         canExpand &&
-          "cursor-pointer hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70",
+          "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70",
       )}
     >
       <div
         {...rowToggleProps}
-        className="flex select-none items-center gap-1.5 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="flex select-none items-center gap-2 rounded-md py-1 hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <span
           className={iconWrapperClass}
@@ -4922,7 +4832,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
             icon={entryToolIcon}
             fallbackName={entryIconName}
             className="block size-4 shrink-0 stroke-[1.8]"
-            muted
+            muted={false}
           />
         </span>
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
@@ -4931,18 +4841,21 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
               <span
                 className={cn(
                   answerPreview ? "shrink-0" : "min-w-0 flex-1",
-                  expanded && !commandPresentation ? "whitespace-pre-wrap break-words select-text" : "truncate",
+                  expanded && "select-text",
+                  expanded && !commandPresentation
+                    ? "whitespace-pre-wrap break-words select-text"
+                    : "truncate",
                   headingClass,
                 )}
                 onClick={expanded ? stopRowToggleWhileSelectingText : undefined}
                 onPointerDown={expanded ? stopRowToggle : undefined}
               >
-                {actionLabel ? (
-                  <span className="mr-2 text-xs font-semibold text-info-foreground">
-                    {actionLabel}
+                {previewText}
+                {workEntry.command ? (
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    {commandNames(workEntry.rawCommand ?? workEntry.command).join(", ")}
                   </span>
                 ) : null}
-                {previewText}
               </span>
               {answerPreview ? (
                 <span
@@ -5022,26 +4935,42 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
       {expanded && workEntry.questionAnswer ? (
         <QuestionAnswerHistory answer={workEntry.questionAnswer} />
       ) : null}
-      {expanded && canExpand && (expandedBody || workEntry.command) && !workEntry.questionAnswer ? (
+      {expanded &&
+      canExpand &&
+      (expandedBody ||
+        workEntry.command ||
+        workEntry.toolData !== undefined ||
+        workEntry.changedFiles?.length) &&
+      !workEntry.questionAnswer ? (
         <div
-          className="mt-2 mb-1 ms-7 cursor-default rounded-md bg-muted/40"
+          className="mt-1 mb-2 ms-7 min-w-0 cursor-default border-l border-border/60 pl-3"
           onClick={stopRowToggle}
           onPointerDown={stopRowToggle}
         >
-          {workEntry.command ? (
+          {workEntry.itemType === "file_change" && threadRef ? (
+            <SavedEditPanel
+              threadRef={threadRef}
+              activityId={workEntry.id}
+              title={previewText}
+              theme={resolvedTheme}
+            />
+          ) : workEntry.command ? (
             <ToolCommandPanel
               threadRef={threadRef ?? undefined}
               activityId={workEntry.id}
+              isRunning={workEntry.toolLifecycleStatus === "inProgress"}
               command={workEntry.command}
               rawCommand={workEntry.rawCommand}
               output={workEntry.detail}
               theme={resolvedTheme}
-              onCollapse={toggleExpanded}
             />
           ) : (
-            <pre className={`${toolCallExpandedBodyClassName} p-3 text-foreground/90`}>
-              {expandedBody}
-            </pre>
+            <ToolDetailsPanel
+              title={previewText}
+              text={expandedBody ?? ""}
+              data={workEntry.toolData}
+              theme={resolvedTheme}
+            />
           )}
         </div>
       ) : null}

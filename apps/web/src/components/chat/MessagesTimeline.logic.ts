@@ -94,9 +94,9 @@ export function liveWorkEntryLabel(
             : status === "stopped"
               ? "Stopped"
               : "Ran";
-    const presentation = toolCommandPresentation(command);
+    const presentation = toolCommandPresentation(command, entry.toolTitle);
     if (presentation.action === "Read") return `${verb} · Read ${presentation.label}`;
-    return `${verb} ${commandProgramName(command) ?? "command"} · ${presentation.label.replace(/\s+/g, " ").slice(0, 180)}`;
+    return `${verb} ${commandProgramName(command) ?? "command"} · ${command.replace(/\s+/g, " ").slice(0, 180)}`;
   }
   return workEntryDisplayLabel(entry, workspaceRoot);
 }
@@ -110,35 +110,6 @@ export function workEntryIsVisibleInGroup(
       (entry.toolLifecycleStatus === "inProgress" ||
         entry.sourceActivityKind === "task.progress")) ||
     !workEntryIndicatesToolNeutralStatus(entry)
-  );
-}
-
-export interface WorkGroupScrollAnchor {
-  readonly entryId: string;
-  readonly offset: number;
-}
-
-/** Restore a visible tool, including a position partway through its expanded output. */
-export function resolveWorkGroupScrollIndex(
-  entries: ReadonlyArray<{ readonly id: string }>,
-  anchor: WorkGroupScrollAnchor | undefined,
-): { index: number; viewOffset: number } | undefined {
-  if (!anchor) return undefined;
-  const index = entries.findIndex((entry) => entry.id === anchor.entryId);
-  return index < 0 ? undefined : { index, viewOffset: -anchor.offset };
-}
-
-/** Only newly appended calls may follow the end, never status or output updates. */
-export function shouldFollowWorkGroupAppend(
-  previous: ReadonlyArray<{ readonly id: string }>,
-  entries: ReadonlyArray<{ readonly id: string }>,
-  distanceFromEnd: number,
-): boolean {
-  return (
-    previous.length > 0 &&
-    entries.length > previous.length &&
-    distanceFromEnd <= 1 &&
-    previous.every((entry, index) => entry.id === entries[index]?.id)
   );
 }
 
@@ -947,6 +918,7 @@ export function deriveMessagesTimelineRows(input: {
   runningTurnId?: TurnId | null;
   expandedTurnIds?: ReadonlySet<TurnId>;
   expandedWorkGroupIds?: ReadonlySet<string>;
+  ungroupToolCalls?: boolean;
   isWorking: boolean;
   activeTurnStartedAt: string | null;
   turnDiffSummaries: ReadonlyArray<TurnDiffSummary>;
@@ -1012,9 +984,8 @@ export function deriveMessagesTimelineRows(input: {
     (unsettledTurnId === null || timelineEntryTurnId(entry) === unsettledTurnId);
   const workEntryIsInActiveRun = (entry: WorkLogEntry) =>
     input.isWorking &&
-    unsettledTurnId !== null &&
     entry.toolLifecycleStatus === "inProgress" &&
-    entry.turnId === unsettledTurnId;
+    (unsettledTurnId === null || entry.turnId === unsettledTurnId);
   const activeToolEntries: Array<Extract<TimelineEntry, { kind: "work" }>> = [];
   for (let index = input.timelineEntries.length - 1; index >= activeTurnHeaderIndex; index -= 1) {
     const entry = input.timelineEntries[index]!;
@@ -1058,7 +1029,7 @@ export function deriveMessagesTimelineRows(input: {
           !workEntryDisplayIndicatesToolFailure(latestVisibleToolEntry.entry))));
   const activeWorkPlacementEntryId = latestVisibleToolEntry?.id;
   const activeWorkRow =
-    activeWorkAnchor && latestVisibleToolEntry && !latestToolFailed
+    !input.ungroupToolCalls && activeWorkAnchor && latestVisibleToolEntry && !latestToolFailed
       ? (() => {
           const groupId = workGroupId(activeWorkAnchor.id, activeWorkAnchor.entry);
           return {
@@ -1076,7 +1047,9 @@ export function deriveMessagesTimelineRows(input: {
         })()
       : null;
   const activeWorkEntryIds = new Set(
-    activeWorkRow !== null || latestToolFailed ? activeToolEntries.map((entry) => entry.id) : [],
+    !input.ungroupToolCalls && (activeWorkRow !== null || latestToolFailed)
+      ? activeToolEntries.map((entry) => entry.id)
+      : [],
   );
   const appendWorkingRow = () => {
     const latestUserMessage = input.timelineEntries[lastUserMessageIndex(input.timelineEntries)];
@@ -1139,7 +1112,12 @@ export function deriveMessagesTimelineRows(input: {
     }
 
     const activityTurnId = timelineEntryTurnId(timelineEntry);
-    if (index > scannedActivityThrough && activityTurnId && isActivityEntry(timelineEntry)) {
+    if (
+      !input.ungroupToolCalls &&
+      index > scannedActivityThrough &&
+      activityTurnId &&
+      isActivityEntry(timelineEntry)
+    ) {
       const entries = [timelineEntry];
       let cursor = index + 1;
       while (cursor < input.timelineEntries.length) {
@@ -1246,6 +1224,33 @@ export function deriveMessagesTimelineRows(input: {
         ),
         (entry) => entry,
       );
+      if (input.ungroupToolCalls) {
+        const previous = input.timelineEntries
+          .slice(Math.max(0, index - 8), index)
+          .findLast((entry) => entry.kind === "message" && entry.message.role === "assistant");
+        const description =
+          previous?.kind === "message" &&
+          previous.message.role === "assistant" &&
+          (previous.message.turnId == null ||
+            previous.message.turnId === timelineEntry.entry.turnId) &&
+          previous.message.text.length <= 180 &&
+          !previous.message.text.includes("\n")
+            ? previous.message.text.trim()
+            : undefined;
+        for (const entry of visibleGroupedEntries) {
+          nextRows.push({
+            kind: "work",
+            id: `tool:${entry.id}`,
+            createdAt: entry.createdAt,
+            groupedEntries: [entry],
+            isExpandedToolGroup: false,
+            ...(description ? { displayLabel: description } : {}),
+          });
+          hasActivityRow ||= workEntryIsInActiveRun(entry);
+        }
+        index = cursor - 1;
+        continue;
+      }
       if (visibleGroupedEntries.length > 0) {
         const activeInProgressToolEntries = visibleGroupedEntries.filter(workEntryIsInActiveRun);
         if (activeInProgressToolEntries.length > 0) {
@@ -1455,7 +1460,7 @@ export function deriveMessagesTimelineRows(input: {
       createdAt: input.activeTurnStartedAt,
     });
   }
-  const rows = attachTrailingToolGroupsToAssistant(nextRows);
+  const rows = input.ungroupToolCalls ? nextRows : attachTrailingToolGroupsToAssistant(nextRows);
   input.queuedMessages?.forEach((queuedMessage, index) => {
     rows.push({
       kind: "queued-message",

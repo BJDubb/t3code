@@ -27,8 +27,6 @@ import {
   liveWorkEntryLabel,
   normalizeCompactToolLabel,
   resolveAssistantMessageCopyState,
-  resolveWorkGroupScrollIndex,
-  shouldFollowWorkGroupAppend,
   shouldPreserveAssistantLineBreaks,
   type MessagesTimelineRow,
   type MessagesTimelineRowsProjection,
@@ -123,6 +121,26 @@ describe("streaming row projection", () => {
     } satisfies Parameters<typeof deriveMessagesTimelineRows>[0];
     return { messages, work, timeline, input, time, turnId, historyTurnId };
   }
+
+  it("keeps tools individual while running and after completion when grouping is disabled", () => {
+    const f = fixture("Checking the workspace.");
+    for (const isWorking of [true, false]) {
+      const rows = deriveMessagesTimelineRows({
+        ...f.input,
+        isWorking,
+        ungroupToolCalls: true,
+        expandedTurnIds: new Set([f.turnId, f.historyTurnId]),
+      });
+      expect(
+        rows.some((row) => ["work-toggle", "work-live", "activity-group"].includes(row.kind)),
+      ).toBe(false);
+      const tools = rows.flatMap((row) => (row.kind === "work" ? row.groupedEntries : []));
+      expect(tools.map((entry) => entry.id)).toContain("live-work");
+      expect(
+        rows.filter((row) => row.kind === "work").every((row) => row.groupedEntries.length === 1),
+      ).toBe(true);
+    }
+  });
 
   it.each([
     ["", "Now visible"],
@@ -631,55 +649,6 @@ describe("streaming row projection", () => {
         : message,
     );
     check({ supportsConversationRollback: true });
-  });
-});
-
-describe("expanded tool group scrolling", () => {
-  const entries = [{ id: "first" }, { id: "second" }];
-
-  it("follows appended calls only at the hard end", () => {
-    const appended = [...entries, { id: "third" }];
-    expect(shouldFollowWorkGroupAppend(entries, appended, 0)).toBe(true);
-    expect(shouldFollowWorkGroupAppend(entries, appended, 0.5)).toBe(true);
-    expect(shouldFollowWorkGroupAppend(entries, appended, 1)).toBe(true);
-    expect(shouldFollowWorkGroupAppend(entries, appended, 1.01)).toBe(false);
-    expect(shouldFollowWorkGroupAppend(entries, appended, 10)).toBe(false);
-    expect(shouldFollowWorkGroupAppend(entries, appended, Infinity)).toBe(false);
-  });
-
-  it("does not follow output updates, prepends, or replacements", () => {
-    expect(
-      shouldFollowWorkGroupAppend(
-        entries,
-        entries.map((entry) => ({ ...entry })),
-        0,
-      ),
-    ).toBe(false);
-    expect(shouldFollowWorkGroupAppend(entries, [{ id: "older" }, ...entries], 0)).toBe(false);
-    expect(
-      shouldFollowWorkGroupAppend(
-        entries,
-        [{ id: "replacement" }, entries[1]!, { id: "third" }],
-        0,
-      ),
-    ).toBe(false);
-    expect(shouldFollowWorkGroupAppend([], entries, 0)).toBe(false);
-  });
-
-  it("restores the visible tool and its offset inside expanded output", () => {
-    const anchor = { entryId: "second", offset: 120 };
-    expect(resolveWorkGroupScrollIndex(entries, anchor)).toEqual({ index: 1, viewOffset: -120 });
-    expect(resolveWorkGroupScrollIndex([{ id: "older" }, ...entries], anchor)).toEqual({
-      index: 2,
-      viewOffset: -120,
-    });
-  });
-
-  it("starts normally when the saved tool no longer exists", () => {
-    expect(resolveWorkGroupScrollIndex(entries, undefined)).toBeUndefined();
-    expect(
-      resolveWorkGroupScrollIndex(entries, { entryId: "removed", offset: 120 }),
-    ).toBeUndefined();
   });
 });
 

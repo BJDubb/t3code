@@ -1227,7 +1227,7 @@ describe("deriveWorkLogEntries", () => {
           data: {
             item: {
               changes: [
-                { path: "apps/web/src/components/ChatView.tsx" },
+                { path: "apps/web/src/components/ChatView.tsx", diff: "@@ -1 +1 @@\n-old\n+new" },
                 { filename: "apps/web/src/session-logic.ts" },
               ],
             },
@@ -1241,6 +1241,12 @@ describe("deriveWorkLogEntries", () => {
       "apps/web/src/components/ChatView.tsx",
       "apps/web/src/session-logic.ts",
     ]);
+    expect(entry?.toolData).toMatchObject({
+      changes: [
+        { path: "apps/web/src/components/ChatView.tsx", diff: "@@ -1 +1 @@\n-old\n+new" },
+        { filename: "apps/web/src/session-logic.ts" },
+      ],
+    });
   });
 
   it("drops duplicated tool detail when it only repeats the title", () => {

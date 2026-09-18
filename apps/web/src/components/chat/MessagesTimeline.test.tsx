@@ -1370,196 +1370,8 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain("Changed 1 file");
+    expect(markup).toContain("Edited session-logic.ts");
     expect(markup).not.toContain("C:/Users/mike/dev-stuff/t3code/apps/web/src/session-logic.ts");
-  });
-
-  it("keeps mixed-success tool groups neutral", () => {
-    const markup = renderToStaticMarkup(
-      <MessagesTimeline
-        {...buildProps()}
-        timelineEntries={[
-          {
-            id: "entry-failed",
-            kind: "work",
-            createdAt: "2026-03-17T19:12:28.000Z",
-            entry: {
-              id: "work-failed",
-              createdAt: "2026-03-17T19:12:28.000Z",
-              label: "Run search",
-              tone: "tool",
-              itemType: "command_execution",
-              toolLifecycleStatus: "failed",
-            },
-          },
-          {
-            id: "entry-completed",
-            kind: "work",
-            createdAt: "2026-03-17T19:12:29.000Z",
-            entry: {
-              id: "work-completed",
-              createdAt: "2026-03-17T19:12:29.000Z",
-              label: "Run tests",
-              tone: "tool",
-              itemType: "command_execution",
-              toolLifecycleStatus: "completed",
-            },
-          },
-        ]}
-      />,
-    );
-
-    expect(markup).toContain("Ran 2 commands");
-    expect(markup).not.toContain('aria-label="Tool call failed"');
-  });
-
-  it("keeps the collapsed summary icon neutral when the group ends in a failure", () => {
-    const markup = renderToStaticMarkup(
-      <MessagesTimeline
-        {...buildProps()}
-        timelineEntries={[
-          {
-            id: "entry-completed",
-            kind: "work",
-            createdAt: "2026-03-17T19:12:28.000Z",
-            entry: {
-              id: "work-completed",
-              createdAt: "2026-03-17T19:12:28.000Z",
-              label: "Run tests",
-              tone: "tool",
-              itemType: "command_execution",
-              toolLifecycleStatus: "completed",
-            },
-          },
-          {
-            id: "entry-failed",
-            kind: "work",
-            createdAt: "2026-03-17T19:12:29.000Z",
-            entry: {
-              id: "work-failed",
-              createdAt: "2026-03-17T19:12:29.000Z",
-              label: "Run lint",
-              tone: "tool",
-              itemType: "command_execution",
-              toolLifecycleStatus: "failed",
-            },
-          },
-        ]}
-      />,
-    );
-
-    expect(markup).toContain("Ran 2 commands");
-    expect(markup).toContain("lucide-terminal");
-    expect(markup).not.toContain("lucide-x");
-    expect(markup).not.toContain("text-destructive");
-    // The failure stays discoverable for screen readers.
-    expect(markup).toContain("tool call failed");
-  });
-
-  it("renders trailing tool calls as part of the terminal assistant block", () => {
-    const turnId = TurnId.make("turn-trailing-tools");
-    const assistantMessageId = MessageId.make("assistant-trailing-tools");
-    const markup = renderToStaticMarkup(
-      <MessagesTimeline
-        {...buildProps()}
-        latestTurn={{
-          turnId,
-          state: "error",
-          startedAt: "2026-03-17T19:12:20.000Z",
-          completedAt: "2026-03-17T19:12:30.000Z",
-        }}
-        timelineEntries={[
-          {
-            id: "assistant-entry",
-            kind: "message",
-            createdAt: MESSAGE_CREATED_AT,
-            message: {
-              id: assistantMessageId,
-              role: "assistant",
-              text: "I’ll search for it now.",
-              turnId,
-              createdAt: MESSAGE_CREATED_AT,
-              updatedAt: "2026-03-17T19:12:29.000Z",
-              streaming: false,
-            },
-          },
-          {
-            id: "trailing-work-entry",
-            kind: "work",
-            createdAt: "2026-03-17T19:12:30.000Z",
-            entry: {
-              id: "trailing-work",
-              createdAt: "2026-03-17T19:12:30.000Z",
-              turnId,
-              label: "Ran command",
-              tone: "tool",
-              itemType: "command_execution",
-              toolLifecycleStatus: "failed",
-            },
-          },
-        ]}
-      />,
-    );
-
-    const messageIndex = markup.indexOf('data-timeline-row-id="assistant-entry"');
-    const toolIndex = markup.indexOf('data-timeline-row-id="trailing-work-entry"');
-    const metaIndex = markup.indexOf(
-      'data-timeline-row-id="assistant-meta:assistant-trailing-tools"',
-    );
-    expect(messageIndex).toBeGreaterThanOrEqual(0);
-    expect(toolIndex).toBeGreaterThan(messageIndex);
-    expect(metaIndex).toBeGreaterThan(toolIndex);
-    expect(markup.match(/I’ll search for it now\./gu)).toHaveLength(1);
-  });
-
-  it("keeps mixed work logs neutral after a later tool call succeeds", () => {
-    const markup = renderToStaticMarkup(
-      <MessagesTimeline
-        {...buildProps()}
-        timelineEntries={[
-          {
-            id: "entry-failed",
-            kind: "work",
-            createdAt: "2026-03-17T19:12:28.000Z",
-            entry: {
-              id: "work-failed",
-              createdAt: "2026-03-17T19:12:28.000Z",
-              label: "Run search",
-              tone: "tool",
-              itemType: "command_execution",
-              toolLifecycleStatus: "failed",
-            },
-          },
-          {
-            id: "entry-info",
-            kind: "work",
-            createdAt: "2026-03-17T19:12:29.000Z",
-            entry: {
-              id: "work-info",
-              createdAt: "2026-03-17T19:12:29.000Z",
-              label: "Status updated",
-              tone: "info",
-            },
-          },
-          {
-            id: "entry-completed",
-            kind: "work",
-            createdAt: "2026-03-17T19:12:30.000Z",
-            entry: {
-              id: "work-completed",
-              createdAt: "2026-03-17T19:12:30.000Z",
-              label: "Run tests",
-              tone: "tool",
-              itemType: "command_execution",
-              toolLifecycleStatus: "completed",
-            },
-          },
-        ]}
-      />,
-    );
-
-    expect(markup).toContain("Ran 2 commands and received 1 update");
-    expect(markup).not.toContain('aria-label="Hidden work includes a failure"');
   });
 
   it("shows the one-line label for a live tool group", () => {
@@ -1598,7 +1410,8 @@ describe("MessagesTimeline", () => {
     );
 
     expect(markup).toContain("Working for");
-    expect(markup).toContain("Running pnpm");
+    expect(markup).toContain("Run pnpm");
+    expect(markup).toContain("Running");
   });
 
   it("scopes a live row failure to the tool named by the row", () => {
@@ -1652,8 +1465,9 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain("Running pnpm");
-    expect(markup).not.toContain("tool call failed");
+    expect(markup).toContain("Run pnpm");
+    expect(markup).toContain("Running");
+    expect(markup).toContain("tool call failed");
   });
 
   it("renders initial thinking as the shared live activity row", () => {
@@ -1679,7 +1493,7 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain('data-timeline-row-id="live-activity-row"');
   });
 
-  it("keeps the completed command in the shared activity row with a present-tense label", () => {
+  it("shows a completed command separately while the agent continues thinking", () => {
     const turnId = TurnId.make("turn-live");
     const markup = renderToStaticMarkup(
       <MessagesTimeline
@@ -1714,11 +1528,12 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain("Running pnpm");
+    expect(markup).toContain("Run pnpm");
+    expect(markup).toContain("Done");
     expect(markup).toContain("lucide-terminal");
-    expect(markup).not.toContain("Ran pnpm");
-    expect(markup).not.toContain("Thinking");
-    expect(markup).not.toContain('data-timeline-row-kind="thinking"');
+    expect(markup).not.toContain("Running pnpm");
+    expect(markup).toContain("Thinking");
+    expect(markup).toContain('data-timeline-row-kind="thinking"');
   });
 
   it("renders review comment contexts as structured cards instead of raw tags", () => {
@@ -2030,9 +1845,9 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain('aria-label="Received 1 update and used 1 tool, tool call failed"');
-    // Ordinary tool failures do not use destructive row styling.
-    expect(markup).not.toContain("text-destructive");
+    expect(markup).toContain('aria-label="No files found, tool call failed"');
+    // The individual failure remains visible beside unrelated updates.
+    expect(markup).toContain("Failed");
   });
 
   it("keeps the red treatment for severe orchestration failures", () => {
@@ -2101,7 +1916,8 @@ describe("MessagesTimeline", () => {
           />,
         );
       });
-      await act(() => renderer!.root.findByProps({ "aria-expanded": false }).props.onClick());
+      const toggle = renderer!.root.findByProps({ "aria-expanded": false });
+      await act(() => toggle.props.onClick());
       const label = renderer!.root.findAll(
         (node) => node.type === "span" && String(node.props.className).includes("select-text"),
       )[0];

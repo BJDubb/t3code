@@ -31,6 +31,24 @@ export function retainedToolOutput(payload: unknown): string | null {
   const root = object(payload);
   const data = object(root.data);
   const item = object(data.item);
+  if (root.itemType === "file_change" && Array.isArray(item.changes)) {
+    const patches = item.changes.flatMap((value) => {
+      const change = object(value);
+      if (typeof change.diff !== "string" || typeof change.path !== "string") return [];
+      if (/^(?:diff --git|--- )/m.test(change.diff)) return [change.diff];
+      const path = change.path.replace(/\\/g, "/");
+      const kind = object(change.kind).type ?? change.kind;
+      const lines = change.diff.replace(/\n$/, "").split("\n");
+      const body =
+        kind === "add" || kind === "delete"
+          ? `@@ -${kind === "add" ? "0,0" : `1,${lines.length}`} +${kind === "delete" ? "0,0" : `1,${lines.length}`} @@\n${lines.map((line) => `${kind === "delete" ? "-" : "+"}${line}`).join("\n")}\n`
+          : change.diff;
+      return [
+        `--- ${kind === "add" ? "/dev/null" : `a/${path}`}\n+++ ${kind === "delete" ? "/dev/null" : `b/${path}`}\n${body}`,
+      ];
+    });
+    return patches.length ? patches.join("\n") : null;
+  }
   const result = object(item.result);
   const raw = object(data.rawOutput);
   for (const candidate of [

@@ -1,3 +1,5 @@
+import { ToolTextBlock } from "./ToolTextBlock";
+import { writeTextToClipboard } from "../../hooks/useCopyToClipboard";
 import { plainToolOutput } from "./toolCommandPresentation";
 import { useAtomValue } from "@effect/atom-react";
 import { EventId, type ScopedThreadRef } from "@t3tools/contracts";
@@ -10,10 +12,12 @@ export function ToolOutputViewer({
   threadRef,
   activityId,
   onClose,
+  theme,
 }: {
   threadRef: ScopedThreadRef;
   activityId: string;
   onClose: () => void;
+  theme: "light" | "dark";
 }) {
   const [offsets, setOffsets] = useState([0]);
   const [query, setQuery] = useState("");
@@ -33,7 +37,7 @@ export function ToolOutputViewer({
         .split("\n")
         .filter((line) => line.toLowerCase().includes(query.toLowerCase()))
         .join("\n")
-    : displayContents;
+    : contents;
   return (
     <Dialog
       open
@@ -42,11 +46,11 @@ export function ToolOutputViewer({
       }}
     >
       <DialogPopup
-        className="flex h-[85dvh] w-[min(96vw,72rem)] max-w-none flex-col overflow-hidden"
+        className="flex h-[85dvh] w-[min(72rem,calc(100vw-2rem))] max-w-none flex-col overflow-hidden"
         bottomStickOnMobile={false}
       >
         <DialogHeader className="shrink-0">
-          <DialogTitle>Retained tool output</DialogTitle>
+          <DialogTitle>Tool output</DialogTitle>
           <DialogDescription>
             The output saved for this call. Any provider-side truncation remains. Large outputs are
             split into pages.
@@ -65,7 +69,7 @@ export function ToolOutputViewer({
             disabled={!value?.available}
             onClick={async () => {
               try {
-                await navigator.clipboard.writeText(contents);
+                await writeTextToClipboard(contents, "tool output");
                 setCopyStatus("Copied");
               } catch {
                 setCopyStatus("Copy failed");
@@ -86,9 +90,12 @@ export function ToolOutputViewer({
           ) : !value.available ? (
             <p>No output was retained for this activity.</p>
           ) : (
-            <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-foreground">
-              {visible || (query ? "No matching lines on this page." : "(Empty output)")}
-            </pre>
+            <ToolTextBlock
+              language="ansi"
+              text={visible || (query ? "No matching lines on this page." : "(Empty output)")}
+              theme={theme}
+              preview={false}
+            />
           )}
         </div>
         <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-border px-6 py-3">

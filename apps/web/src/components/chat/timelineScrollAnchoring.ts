@@ -118,7 +118,7 @@ export interface RememberedTimelinePosition {
     readonly spawnEntries: ReadonlySet<string>;
     readonly reasoningMessages: ReadonlySet<string>;
     readonly workGroupState: {
-      scrollPositions: Map<string, { readonly entryId: string; readonly offset: number }>;
+      visibleEntryCounts: Map<string, number>;
       expandedEntries: Set<string>;
     };
   };

@@ -1,0 +1,61 @@
+name: Personal Windows installer
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "personal-v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: github.repository == 'BJDubb/t3code'
+    runs-on: windows-2022
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v6
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb
+        with:
+          node-version-file: package.json
+          run-install: false
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: stable
+          targets: x86_64-pc-windows-msvc
+      - name: Install Spectre libraries
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $installPath = & $vswhere -products * -latest -property installationPath
+          $setup = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\setup.exe"
+          $process = Start-Process $setup -ArgumentList 'modify', '--installPath', "`"$installPath`"", '--add', 'Microsoft.VisualStudio.Component.VC.Runtimes.x86.x64.Spectre', '--quiet', '--norestart' -Wait -PassThru -WindowStyle Hidden
+          if ($process.ExitCode -notin @(0, 3010)) { throw "Visual Studio setup failed: $($process.ExitCode)" }
+      - name: Install dependencies
+        run: |
+          vp install --frozen-lockfile
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify tool-call behavior
+        run: |
+          vp test run apps/web/src/components/chat/toolCommandPresentation.test.ts apps/web/src/components/chat/MessagesTimeline.logic.test.ts apps/web/src/components/chat/MessagesTimeline.test.tsx apps/web/src/session-logic.test.ts apps/server/src/orchestration/toolOutputQuery.test.ts
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build unsigned installer without WSL
+        run: |
+          if ($env:GITHUB_REF_TYPE -eq 'tag') {
+            $version = $env:GITHUB_REF_NAME -replace '^personal-v', ''
+          } else {
+            $base = (Get-Content apps/server/package.json -Raw | ConvertFrom-Json).version -replace '-.*$', ''
+            $version = "$base-preview.$(Get-Date -Format yyyyMMdd).$env:GITHUB_RUN_NUMBER"
+          }
+          ./scripts/build-personal.ps1 -Version $version
+      - uses: actions/upload-artifact@v4
+        with:
+          name: personal-windows-${{ github.sha }}
+          path: |
+            release/personal/*.exe
+            release/personal/*.sha256
+          if-no-files-found: error
+          retention-days: 30

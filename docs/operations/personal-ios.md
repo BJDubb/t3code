@@ -27,6 +27,10 @@ so it cannot select upstream's project from the default app configuration.
 Use `config` to inspect the public configuration. The app's sharing and widget
 targets use its own application group. OTA updates are disabled and the update
 URL belongs to this fork, so the app runs only the bundle shipped in its build.
+The personal profile uses the `appVersion` runtime policy because Windows and
+macOS resolve pnpm/native fingerprint inputs differently. This is suitable while
+OTA updates are disabled; restore a verified native compatibility policy before
+enabling them.
 
 Once a build succeeds, run `pwsh -File scripts/personal-ios.ps1 submit` and
 select that personal build. Submission uses the separate `personal` profile,

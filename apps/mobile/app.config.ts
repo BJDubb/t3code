@@ -9,7 +9,22 @@ const repoEnv = loadRepoEnv();
 Object.assign(process.env, repoEnv);
 
 const APP_VARIANT = resolveAppVariant(repoEnv.APP_VARIANT);
+const isPersonalFork = repoEnv.T3CODE_PERSONAL_IOS === "1";
+const personalExpoOwner = repoEnv.T3CODE_PERSONAL_EXPO_OWNER?.trim();
+const personalProjectId = repoEnv.T3CODE_PERSONAL_EAS_PROJECT_ID?.trim();
+const personalAppleTeamId = repoEnv.T3CODE_PERSONAL_APPLE_TEAM_ID?.trim();
+if (isPersonalFork && (!personalExpoOwner || !personalProjectId || !personalAppleTeamId)) {
+  throw new Error(
+    "Personal iOS builds require T3CODE_PERSONAL_EXPO_OWNER, T3CODE_PERSONAL_EAS_PROJECT_ID, and T3CODE_PERSONAL_APPLE_TEAM_ID. Never use upstream's signing or Expo project for a fork.",
+  );
+}
+const easProjectId = isPersonalFork ? personalProjectId! : "d763fcb8-d37c-41ea-a773-b54a0ab4a454";
 const isIosPersonalTeamBuild = repoEnv.T3CODE_IOS_PERSONAL_TEAM === "1";
+if (isPersonalFork && isIosPersonalTeamBuild) {
+  throw new Error(
+    "The personal fork uses a paid Apple team, not the reduced-capability Personal Team build.",
+  );
+}
 const runtimeVersionPolicy =
   process.env.MOBILE_VERSION_POLICY ??
   (APP_VARIANT === "development" ? "appVersion" : "fingerprint");
@@ -112,7 +127,9 @@ function resolveAppVariant(value: string | undefined): AppVariant {
 const variant = VARIANT_CONFIG[APP_VARIANT];
 const iosBundleIdentifier = isIosPersonalTeamBuild
   ? personalTeamBundleIdentifier!
-  : variant.iosBundleIdentifier;
+  : isPersonalFork
+    ? "com.bjdubb.t3code.personal"
+    : variant.iosBundleIdentifier;
 
 const dmSansFonts = {
   regular: "@expo-google-fonts/dm-sans/400Regular/DMSans_400Regular.ttf",
@@ -210,10 +227,10 @@ const sharingPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
 // family names without waiting for runtime font loading.
 
 const config: ExpoConfig = {
-  name: variant.appName,
-  slug: "t3-code",
+  name: isPersonalFork ? "T3 Code Personal" : variant.appName,
+  slug: isPersonalFork ? "t3-code-personal" : "t3-code",
   platforms: ["ios", "android"],
-  scheme: variant.scheme,
+  scheme: isPersonalFork ? "t3code-personal" : variant.scheme,
   version: "1.2.1",
   runtimeVersion: {
     // Development manifests resolve on every launch, so avoid fingerprint's
@@ -225,8 +242,8 @@ const config: ExpoConfig = {
   icon: variant.assets.appIcon,
   userInterfaceStyle: "automatic",
   updates: {
-    enabled: repoEnv.T3CODE_MOBILE_UPDATES_ENABLED !== "0",
-    url: "https://u.expo.dev/d763fcb8-d37c-41ea-a773-b54a0ab4a454",
+    enabled: !isPersonalFork && repoEnv.T3CODE_MOBILE_UPDATES_ENABLED !== "0",
+    url: `https://u.expo.dev/${easProjectId}`,
     checkAutomatically: "ON_LOAD",
     fallbackToCacheTimeout: 0,
   },
@@ -240,13 +257,13 @@ const config: ExpoConfig = {
     // Pin code signing to the T3 Tools team so non-interactive `expo run:ios`
     // does not fall back to a personal team (which cannot sign app groups,
     // Sign in with Apple, or push notification entitlements).
-    appleTeamId: "ARK85ZXQ4Z",
+    appleTeamId: isPersonalFork ? personalAppleTeamId! : "ARK85ZXQ4Z",
     associatedDomains: [
       `applinks:${variant.relyingParty}`,
       `webcredentials:${variant.relyingParty}`,
     ],
     entitlements: {
-      "keychain-access-groups": [`$(AppIdentifierPrefix)${variant.iosBundleIdentifier}`],
+      "keychain-access-groups": [`$(AppIdentifierPrefix)${iosBundleIdentifier}`],
     },
     infoPlist: {
       NSAppTransportSecurity: {
@@ -453,10 +470,10 @@ const config: ExpoConfig = {
       tracesToken: repoEnv.EXPO_PUBLIC_OTLP_TRACES_TOKEN ?? null,
     },
     eas: {
-      projectId: "d763fcb8-d37c-41ea-a773-b54a0ab4a454",
+      projectId: easProjectId,
     },
   },
-  owner: "pingdotgg",
+  owner: isPersonalFork ? personalExpoOwner! : "pingdotgg",
 };
 
 export default config;

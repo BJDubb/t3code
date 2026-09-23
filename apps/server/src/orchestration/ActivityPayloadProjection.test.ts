@@ -195,7 +195,7 @@ describe("projectActivityPayload", () => {
     expect(textRead.payload).not.toMatchObject({ data: { imagePath: expect.anything() } });
   });
 
-  it("slims Codex-shaped mcp_tool_call items to rendered fields plus a result summary", () => {
+  it("slims Codex-shaped mcp_tool_call items to rendered fields plus a bounded result preview", () => {
     const projected = projectActivityPayload(
       activity({
         itemType: "mcp_tool_call",
@@ -223,8 +223,11 @@ describe("projectActivityPayload", () => {
     expect(item.server).toBe("github");
     expect(item.arguments).toEqual({ pr: 42 });
     expect(item._meta).toBeUndefined();
-    expect(item.result).toEqual({ content: "PR body line one" });
-    expect(JSON.stringify(projected.payload).length).toBeLessThan(500);
+    expect((item.result as { content: string }).content).toMatch(/^PR body line one\n/);
+    expect((item.result as { content: string }).content).toContain(
+      "Open full output for the rest.",
+    );
+    expect(JSON.stringify(projected.payload).length).toBeLessThan(5000);
   });
 
   it("slims Claude-shaped mcp_tool_call data (toolName/input/result block)", () => {
@@ -245,8 +248,64 @@ describe("projectActivityPayload", () => {
     const data = (projected.payload as Record<string, unknown>).data as Record<string, unknown>;
     expect(data.toolName).toBe("mcp__github__fetch_pr");
     expect(data.input).toEqual({ pr: 42 });
-    expect(data.result).toEqual({ content: "first line of output" });
-    expect(JSON.stringify(projected.payload).length).toBeLessThan(500);
+    expect((data.result as { content: string }).content).toMatch(/^first line of output\n/);
+    expect((data.result as { content: string }).content).toContain(
+      "Open full output for the rest.",
+    );
+    expect(JSON.stringify(projected.payload).length).toBeLessThan(5000);
+  });
+
+  it.each([
+    {
+      item: {
+        type: "mcpToolCall",
+        server: "passbolt",
+        tool: "search_credentials",
+        result: {
+          content: [
+            {
+              type: "text",
+              text: "Searched Passbolt for: Jim2\nFound 1 matching credential.\n1. Jim2 Preprod\n   ID: item-1",
+            },
+          ],
+        },
+      },
+    },
+    {
+      toolName: "mcp__passbolt__search_credentials",
+      result: {
+        content:
+          "Searched Passbolt for: Jim2\nFound 1 matching credential.\n1. Jim2 Preprod\n   ID: item-1",
+      },
+    },
+  ])("keeps short MCP results in the activity preview", (data) => {
+    const projected = projectActivityPayload(activity({ itemType: "mcp_tool_call", data }));
+    const projectedAgain = projectActivityPayload(projected);
+    expect(JSON.stringify(projectedAgain.payload)).toContain("Found 1 matching credential.");
+    expect(JSON.stringify(projectedAgain.payload)).toContain("Jim2 Preprod");
+  });
+
+  it("keeps the full short result for other MCP calls", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "mcp_tool_call",
+        data: {
+          item: {
+            type: "mcpToolCall",
+            server: "passbolt",
+            tool: "run_with_credentials",
+            result: {
+              content: [
+                { type: "text", text: '{\n  "outcome": "completed",\n  "exit_code": 0\n}' },
+              ],
+            },
+          },
+        },
+      }),
+    );
+    expect(projected.payload).toMatchObject({
+      data: { item: { result: { content: '{\n  "outcome": "completed",\n  "exit_code": 0\n}' } } },
+    });
   });
 
   it.each([

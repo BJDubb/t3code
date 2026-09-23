@@ -155,14 +155,19 @@ export function ToolDetailsPanel({
   text,
   data,
   theme,
+  threadRef,
+  activityId,
 }: {
   title: string;
   text: string;
   data?: unknown;
   theme: "light" | "dark";
+  threadRef?: ScopedThreadRef;
+  activityId?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [raw, setRaw] = useState(false);
+  const [showOutput, setShowOutput] = useState(false);
   const contents = data !== undefined ? JSON.stringify(data, null, 2) : text;
   const obj = record(data);
   const changes = Array.isArray(obj?.changes)
@@ -180,7 +185,18 @@ export function ToolDetailsPanel({
         <>
           {result !== undefined ? (
             <section>
-              <h4 className="mb-2 text-xs font-medium text-muted-foreground">Result</h4>
+              <div className="mb-2 flex items-center justify-between">
+                <h4 className="text-xs font-medium text-muted-foreground">Result</h4>
+                {threadRef && activityId ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowOutput(true)}
+                    className="rounded px-2 py-1 text-xs text-muted-foreground hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    Full output &#8599;
+                  </button>
+                ) : null}
+              </div>
               <ToolResult value={result} theme={theme} />
             </section>
           ) : null}
@@ -255,6 +271,14 @@ export function ToolDetailsPanel({
           </div>
         </DialogPopup>
       </Dialog>
+      {showOutput && threadRef && activityId ? (
+        <ToolOutputViewer
+          threadRef={threadRef}
+          activityId={activityId}
+          theme={theme}
+          onClose={() => setShowOutput(false)}
+        />
+      ) : null}
     </section>
   );
 }

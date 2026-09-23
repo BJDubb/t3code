@@ -4970,6 +4970,8 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
               text={expandedBody ?? ""}
               data={workEntry.toolData}
               theme={resolvedTheme}
+              {...(threadRef ? { threadRef } : {})}
+              activityId={workEntry.id}
             />
           )}
         </div>

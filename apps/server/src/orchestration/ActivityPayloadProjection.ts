@@ -234,12 +234,22 @@ function extractMcpResultText(result: unknown): string | null {
 }
 
 function summarizeMcpResult(result: unknown): Record<string, unknown> | undefined {
+  const text = extractMcpResultText(result);
+  const summary = text ? summarizeToolTextOutput(text) : null;
+  return summary ? { content: summary } : undefined;
+}
+
+function previewMcpResult(result: unknown): Record<string, unknown> | undefined {
   if (result === undefined || result === null) {
     return undefined;
   }
   const text = extractMcpResultText(result);
-  const summary = text ? summarizeToolTextOutput(text) : null;
-  return summary ? { content: summary } : undefined;
+  if (!text) return undefined;
+  const maxLength = 4 * 1024;
+  if (text.length <= maxLength) return { content: text };
+  const suffix = "\n… Open full output for the rest.";
+  const preview = Array.from(text.slice(0, maxLength - suffix.length)).join("");
+  return { content: `${preview}${suffix}` };
 }
 
 /** Reuse the page URL already returned by preview tools before slimming their output. */
@@ -323,7 +333,7 @@ function projectMcpToolCallData(data: Record<string, unknown>): Record<string, u
         projectedItem[key] = item[key];
       }
     }
-    const result = summarizeMcpResult(item.result);
+    const result = previewMcpResult(item.result);
     if (result) {
       projectedItem.result = result;
     }
@@ -337,7 +347,7 @@ function projectMcpToolCallData(data: Record<string, unknown>): Record<string, u
     projectedData.input = data.input;
   }
   if (!item) {
-    const result = summarizeMcpResult(data.result);
+    const result = previewMcpResult(data.result);
     if (result) {
       projectedData.result = result;
     }

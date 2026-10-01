@@ -725,6 +725,13 @@ describe("work entry labels", () => {
     expect(workEntryDisplayLabel(commandEntry, undefined)).toBe("vp test run");
   });
 
+  it("labels a live stdin script without using its first assignment as a program name", () => {
+    const commandEntry = { ...entry, command: "@'\nprint(1)\n'@ | python -" };
+    expect(liveWorkEntryLabel(commandEntry, undefined, true)).toBe("Running · Python script");
+    expect(liveWorkEntryLabel(commandEntry, undefined, false)).toBe("Ran · Python script");
+    expect(workEntryDisplayLabel(commandEntry, undefined)).toBe(commandEntry.command);
+  });
+
   it("summarizes the program inside a shell wrapper while preserving the expanded command", () => {
     const command = "/bin/zsh -lc 'vp test run apps/web/src/session-logic.test.ts'";
     const commandEntry = { ...entry, command };

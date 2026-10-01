@@ -93,8 +93,10 @@ export function liveWorkEntryLabel(
             : status === "stopped"
               ? "Stopped"
               : "Ran";
-    const presentation = toolCommandPresentation(command, entry.toolTitle);
+    const presentation = toolCommandPresentation(entry.rawCommand ?? command, entry.toolTitle);
     if (presentation.action === "Read") return `${verb} · Read ${presentation.label}`;
+    if (presentation.action === "Script")
+      return `${verb} · ${presentation.label.replace(/^Run /, "")}`;
     return `${verb} ${commandProgramName(command) ?? "command"} · ${command.replace(/\s+/g, " ").slice(0, 180)}`;
   }
   return workEntryDisplayLabel(entry, workspaceRoot);

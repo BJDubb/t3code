@@ -14,6 +14,67 @@ export function displayShellCommand(command: string): string {
   return body;
 }
 
+function interpreterPresentation(invocation: string) {
+  const match =
+    /^(python(?:3(?:\.\d+)?)?|py|node|bash|sh|pwsh|powershell)(?:\.exe)?(?:\s+(-|(?:-Command\s+|-c\s+)-))?\s*$/i.exec(
+      invocation.trim(),
+    );
+  if (!match) return null;
+  const interpreter = match[1]!.toLowerCase();
+  if (!match[2] && !/^(bash|sh|pwsh|powershell)$/.test(interpreter)) return null;
+  if (/^(python|py)/.test(interpreter)) return { language: "python", label: "Python script" };
+  if (interpreter === "node") return { language: "javascript", label: "Node script" };
+  if (interpreter === "pwsh" || interpreter === "powershell")
+    return { language: "powershell", label: "PowerShell script" };
+  return { language: "shellscript", label: "Shell script" };
+}
+
+/** Recognize complete literal script containers for display, never execution.
+ * Keep the full invocation available: interpolation and shell options still matter.
+ */
+export function commandScriptBody(original: string) {
+  const command = displayShellCommand(original).trim();
+  const hereString = /^@(['"])\r?\n([\s\S]*?)\r?\n\1@\s*\|\s*([^\r\n]+)$/.exec(command);
+  if (hereString) {
+    const interpreter = interpreterPresentation(hereString[3]!);
+    if (interpreter && !new RegExp(`(?:^|\\n)${hereString[1]}@`).test(hereString[2]!))
+      return { ...interpreter, text: hereString[2]! };
+  }
+  const heredoc = /^([^\r\n]+?)\s*<<\s*(['"]?)([A-Za-z_][\w]*)\2\s*\r?\n([\s\S]*?)\r?\n\3$/.exec(
+    command,
+  );
+  if (heredoc) {
+    const interpreter = interpreterPresentation(heredoc[1]!);
+    if (interpreter && !heredoc[4]!.split(/\r?\n/).includes(heredoc[3]!))
+      return { ...interpreter, text: heredoc[4]! };
+  }
+  // A PowerShell array of literal lines is often piped into a shell's stdin.
+  const arrayPipe =
+    /^@\(\s*('(?:''|[^'])*'(?:\s*,\s*'(?:''|[^'])*')*)\s*\)\s*\|\s*([^\r\n]+)$/.exec(command);
+  if (arrayPipe) {
+    const interpreter = interpreterPresentation(arrayPipe[2]!);
+    if (interpreter)
+      return {
+        ...interpreter,
+        text: [...arrayPipe[1]!.matchAll(/'((?:''|[^'])*)'/g)]
+          .map((line) => line[1]!.replace(/''/g, "'"))
+          .join("\n"),
+      };
+  }
+  // Avoid guessing at escape rules across different host shells.
+  const literalPipe = /^'([^']*)'\s*\|\s*([^\r\n]+)$/.exec(command);
+  if (literalPipe) {
+    const interpreter = interpreterPresentation(literalPipe[2]!);
+    if (interpreter) return { ...interpreter, text: literalPipe[1]! };
+  }
+  // Providers sometimes send a quoted PowerShell script as the display command.
+  // Label it as script text rather than assuming that the shell executed it.
+  const quotedScript = /^(['"])(\$[\w:]+\s*=[\s\S]+)\1$/.exec(command);
+  if (quotedScript)
+    return { language: "powershell", label: "PowerShell script text", text: quotedScript[2]! };
+  return null;
+}
+
 export function toolCommandPresentation(original: string, title?: string, description?: string) {
   const command = displayShellCommand(original);
   const intent = title?.trim();
@@ -32,6 +93,13 @@ export function toolCommandPresentation(original: string, title?: string, descri
       action: "Command",
       label: description.replace(/`([^`]+)`/g, "$1").replace(/\.$/, ""),
       language: shellLanguage(original),
+    };
+  const body = commandScriptBody(original);
+  if (body)
+    return {
+      action: "Script",
+      label: body.label === "PowerShell script text" ? body.label : `Run ${body.label}`,
+      language: body.language,
     };
   // Recognize only literal file reads. Compound scripts and dynamic paths stay
   // visible as commands so a read label cannot conceal another operation.
@@ -69,7 +137,7 @@ export function toolCommandPresentation(original: string, title?: string, descri
 }
 
 export function shellLanguage(command: string): string {
-  return /\b(?:pwsh|powershell|Get-Content|Get-ChildItem|Select-Object|Set-Location)\b/i.test(
+  return /\b(?:pwsh|powershell|Get-Content|Get-ChildItem|Select-Object|Set-Location)\b|^\s*(?:@['"]|\$[\w:]+\s*=)/i.test(
     command,
   )
     ? "powershell"
@@ -78,6 +146,7 @@ export function shellLanguage(command: string): string {
 
 /** A conservative display summary; quoted separators are not command boundaries. */
 export function commandNames(original: string): string[] {
+  if (commandScriptBody(original)) return [];
   const command = displayShellCommand(original);
   const segments: string[] = [];
   let quote = "";
@@ -106,7 +175,16 @@ export function commandNames(original: string): string[] {
     const match = /^\s*(?:[A-Za-z_][\w]*=\S+\s+)*(?:"([^"\n]+)"|'([^'\n]+)'|([\w./\\-]+))/.exec(
       segment,
     );
-    const name = (match?.[1] ?? match?.[2] ?? match?.[3])?.split(/[\\/]/).at(-1);
+    const candidate = match?.[1] ?? match?.[2] ?? match?.[3];
+    // A quoted string is only an executable name if it looks like a name or
+    // path. Script source and assignments must never become "Run $r=".
+    if (
+      !candidate ||
+      /[$;|&=\r\n]/.test(candidate) ||
+      (/\s/.test(candidate) && !/[\\/]/.test(candidate))
+    )
+      return [];
+    const name = candidate.split(/[\\/]/).at(-1);
     return name && !/^(?:if|then|else|fi|for|do|done)$/.test(name) ? [name] : [];
   });
   return [...new Set(names)].slice(0, 6);
@@ -169,6 +247,7 @@ export function shellDisplayTokens(source: string) {
 
 function shellCommandDescription(command: string): string {
   const trimmed = command.trim();
+  if (/^\$[\w:]+\s*=/.test(trimmed)) return "Run PowerShell script";
   if (/^git status(?:\s|$)/i.test(trimmed) && !/[;|&\n]/.test(trimmed))
     return "Inspect working tree";
   if (/^git diff(?:\s|$)/i.test(trimmed) && !/[;|&\n]/.test(trimmed)) return "Review file changes";

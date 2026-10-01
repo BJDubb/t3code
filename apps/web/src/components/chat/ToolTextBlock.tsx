@@ -29,11 +29,13 @@ export function ToolTextBlock({
   language = "text",
   theme,
   preview = true,
+  highlightShell = false,
 }: {
   text: string;
   language?: string;
   theme: "light" | "dark";
   preview?: boolean;
+  highlightShell?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const blockRef = useRef<HTMLDivElement>(null);
@@ -56,7 +58,11 @@ export function ToolTextBlock({
   } | null>(null);
   useEffect(() => {
     let cancelled = false;
-    if (language === "text" || isShell || source.length > (language === "ansi" ? 70_000 : 12_000))
+    if (
+      language === "text" ||
+      (isShell && !highlightShell) ||
+      source.length > (language === "ansi" ? 70_000 : 12_000)
+    )
       return;
     void getSyntaxHighlighterPromise(language)
       .then((highlighter) => {
@@ -73,7 +79,7 @@ export function ToolTextBlock({
     return () => {
       cancelled = true;
     };
-  }, [source, language, theme, isShell]);
+  }, [source, language, theme, isShell, highlightShell]);
   const html =
     highlight?.source === source && highlight.language === language && highlight.theme === theme
       ? highlight.html
@@ -94,7 +100,9 @@ export function ToolTextBlock({
       <div
         className={`px-1 py-2 text-xs leading-relaxed select-text [&_pre]:!bg-transparent [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_code]:font-mono ${preview && expanded && excerpt.truncated ? "pr-24" : ""}`}
       >
-        {isShell ? (
+        {html ? (
+          <div dangerouslySetInnerHTML={{ __html: html }} />
+        ) : isShell ? (
           <pre className="whitespace-pre-wrap break-words font-mono">
             {shellDisplayTokens(source).map((token) => (
               <span
@@ -116,8 +124,6 @@ export function ToolTextBlock({
               </span>
             ))}
           </pre>
-        ) : html ? (
-          <div dangerouslySetInnerHTML={{ __html: html }} />
         ) : (
           <pre className="whitespace-pre-wrap break-words font-mono text-foreground/90">
             {source}

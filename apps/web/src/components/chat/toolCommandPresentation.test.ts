@@ -1,9 +1,67 @@
-import { commandNames, plainToolOutput, shellDisplayTokens } from "./toolCommandPresentation";
+import {
+  commandNames,
+  commandScriptBody,
+  plainToolOutput,
+  shellDisplayTokens,
+} from "./toolCommandPresentation";
 import { describe, expect, it } from "vite-plus/test";
 import { toolCommandPresentation, displayShellCommand } from "./toolCommandPresentation";
 import { toolTextPreview } from "./toolCommandPresentation";
 
 describe("tool command presentation", () => {
+  it("does not mistake quoted PowerShell source for an executable", () => {
+    const source =
+      '\'$r="C:/reports"; $rows=Get-Content "$r/results.json"; $rows | Select-Object Name\'';
+    expect(commandNames(source)).toEqual([]);
+    expect(toolCommandPresentation(source)).toMatchObject({
+      action: "Script",
+      label: "PowerShell script text",
+    });
+    expect(commandScriptBody(source)).toMatchObject({
+      language: "powershell",
+      text: source.slice(1, -1),
+    });
+    expect(toolCommandPresentation('$r="C:/reports"; Get-Content "$r/results.json"').label).toBe(
+      "Run PowerShell script",
+    );
+    expect(commandNames('"C:/Program Files/tools/python.exe" --version')).toEqual(["python.exe"]);
+  });
+  it.each([
+    ["@'\nprint('hello')\n'@ | python -", "python", "print('hello')", "Run Python script"],
+    ['@"\nconsole.log(1)\n"@ | node -', "javascript", "console.log(1)", "Run Node script"],
+    ["python3 - <<'PY'\nprint('hello')\nPY", "python", "print('hello')", "Run Python script"],
+    ["bash <<EOF\nprintf hello\nEOF", "shellscript", "printf hello", "Run Shell script"],
+    [
+      "@('Get-Content ''file.ts''', 'Get-Date') | powershell -Command -",
+      "powershell",
+      "Get-Content 'file.ts'\nGet-Date",
+      "Run PowerShell script",
+    ],
+  ])(
+    "presents complete script containers in their own language: %s",
+    (source, language, text, label) => {
+      expect(commandScriptBody(source)).toMatchObject({ language, text });
+      expect(toolCommandPresentation(source)).toMatchObject({ action: "Script", label });
+      expect(commandNames(source)).toEqual([]);
+      expect(displayShellCommand(source)).toBe(source);
+    },
+  );
+  it.each([
+    "@'\nprint(1)\n'@ | python -; git status",
+    "python - <<PY\nprint(1)\nWRONG",
+    "'print(1)' | python script.py",
+    "'not source'",
+    "echo 'print(1)' | python -",
+    "'print(''hello'')' | python -",
+    "bash <<EOF\necho one\nEOF\necho two\nEOF",
+    "@'\necho one\n'@\necho two\n'@ | sh",
+  ])(
+    "preserves ambiguous or compound invocations instead of extracting a partial script: %s",
+    (source) => {
+      expect(commandScriptBody(source)).toBeNull();
+      expect(displayShellCommand(source)).toBe(source);
+    },
+  );
   it("uses nearby intent for generic titles and concise fallback descriptions", () => {
     expect(
       toolCommandPresentation(

@@ -6,7 +6,7 @@ import { orchestrationEnvironment } from "../../state/orchestration";
 import { ToolOutputViewer } from "./ToolOutputViewer";
 import { ToolTextDialog } from "./ToolTextDialog";
 import { ToolTextBlock, ToolCopyButton } from "./ToolTextBlock";
-import { shellLanguage, displayShellCommand } from "./toolCommandPresentation";
+import { shellLanguage, displayShellCommand, commandScriptBody } from "./toolCommandPresentation";
 
 function DetailAction({ children, onClick }: { children: string; onClick: () => void }) {
   return (
@@ -103,21 +103,28 @@ export function ToolCommandPanel({
   theme: "light" | "dark";
 }) {
   const command = displayShellCommand(savedRawCommand ?? savedCommand);
-  const rawCommand = savedRawCommand ?? (command !== savedCommand ? savedCommand : undefined);
+  const invocation = savedRawCommand ?? savedCommand;
+  const body = commandScriptBody(invocation);
+  const rawCommand = body || invocation !== command ? invocation : undefined;
   const [showOutput, setShowOutput] = useState(false);
   const [showInvocation, setShowInvocation] = useState(false);
   return (
     <section className="min-w-0" aria-label="Command details">
       <div className="flex items-center justify-between px-1 py-1 text-muted-foreground">
-        <span className="text-xs font-medium">Command</span>
+        <span className="text-xs font-medium">{body?.label ?? "Command"}</span>
         <div className="flex items-center gap-1">
-          {rawCommand && rawCommand !== command ? (
+          {rawCommand ? (
             <DetailAction onClick={() => setShowInvocation(true)}>Original invocation</DetailAction>
           ) : null}
-          <ToolCopyButton text={command} />
+          <ToolCopyButton text={invocation} />
         </div>
       </div>
-      <ToolTextBlock text={command} language={shellLanguage(rawCommand ?? command)} theme={theme} />
+      <ToolTextBlock
+        text={body?.text ?? command}
+        language={body?.language ?? shellLanguage(invocation)}
+        highlightShell={body !== null}
+        theme={theme}
+      />
       {showInvocation && rawCommand ? (
         <ToolTextDialog
           title="Original invocation"

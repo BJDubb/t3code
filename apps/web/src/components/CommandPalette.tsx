@@ -74,6 +74,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
 import { useDesktopLocalBootstraps } from "../connection/useDesktopLocalBootstraps";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
+import { useNewScratchThread } from "../hooks/useNewScratchThread";
 import { useOpenPanelPullRequestUrl } from "../hooks/useOpenPanelPullRequestUrl";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
 import { useClientSettings } from "../hooks/useSettings";
@@ -724,6 +725,7 @@ function OpenCommandPaletteDialog(props: {
   const { environments } = useEnvironments();
   const desktopLocalBootstraps = useDesktopLocalBootstraps();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const newScratchThread = useNewScratchThread();
   const availableSettingsSearchItems = useAvailableSettingsSearchItems();
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
     useHandleNewThread();
@@ -1331,6 +1333,22 @@ function OpenCommandPaletteDialog(props: {
     ],
   );
 
+  const scratchThreadItems = useMemo(
+    () =>
+      environments
+        .filter((environment) => environment.connection.phase === "connected")
+        .map((environment) => ({
+          kind: "action" as const,
+          value: `scratch-thread:${environment.environmentId}`,
+          title: "No project",
+          description: `New chat in its own folder · ${environment.label}`,
+          searchTerms: ["scratch", "no project", "new chat", "new thread", environment.label],
+          icon: <SquarePenIcon className={ITEM_ICON_CLASS} />,
+          run: () => newScratchThread(environment.environmentId),
+        })),
+    [environments, newScratchThread],
+  );
+
   const allThreadItems = useMemo(
     () =>
       buildThreadActionItems({
@@ -1706,7 +1724,7 @@ function OpenCommandPaletteDialog(props: {
   }, [clearOpenIntent, openAddProjectFlow, openIntent]);
 
   useLayoutEffect(() => {
-    if (openIntent?.kind !== "new-thread-in" || projectThreadItems.length === 0) {
+    if (openIntent?.kind !== "new-thread-in") {
       return;
     }
     clearOpenIntent();
@@ -1728,6 +1746,11 @@ function OpenCommandPaletteDialog(props: {
       addonIcon: <SquarePenIcon className={ADDON_ICON_CLASS} />,
       groups: [
         {
+          value: "scratch",
+          label: "No project",
+          items: enumerateCommandPaletteItems(scratchThreadItems),
+        },
+        {
           value: "projects",
           label: "Projects",
           items: enumerateCommandPaletteItems(prioritized),
@@ -1741,10 +1764,14 @@ function OpenCommandPaletteDialog(props: {
     currentProjectId,
     openIntent,
     projectThreadItems,
+    scratchThreadItems,
     pushPaletteView,
   ]);
 
   const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
+  actionItems.push(
+    ...scratchThreadItems.map((item) => ({ ...item, title: "New chat without a project" })),
+  );
 
   if (projects.length > 0) {
     const activeProjectTitle =
@@ -1781,7 +1808,10 @@ function OpenCommandPaletteDialog(props: {
       title: "New thread in...",
       icon: <SquarePenIcon className={ITEM_ICON_CLASS} />,
       addonIcon: <SquarePenIcon className={ADDON_ICON_CLASS} />,
-      groups: [{ value: "projects", label: "Projects", items: projectThreadItems }],
+      groups: [
+        { value: "scratch", label: "No project", items: scratchThreadItems },
+        { value: "projects", label: "Projects", items: projectThreadItems },
+      ],
     });
   }
 

@@ -40,7 +40,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify tool-call behavior
         run: |
-          vp test run apps/web/src/components/chat/toolCommandPresentation.test.ts apps/web/src/components/chat/MessagesTimeline.logic.test.ts apps/web/src/components/chat/MessagesTimeline.test.tsx apps/web/src/session-logic.test.ts apps/server/src/orchestration/toolOutputQuery.test.ts
+          vp test run apps/web/src/components/chat/toolCommandPresentation.test.ts apps/web/src/components/chat/MessagesTimeline.logic.test.ts apps/web/src/components/chat/MessagesTimeline.test.tsx apps/web/src/session-logic.test.ts apps/web/src/hooks/useNewScratchThread.test.ts packages/client-runtime/src/operations/projects.test.ts apps/server/src/orchestration/toolOutputQuery.test.ts
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Build unsigned installer without WSL
         run: |

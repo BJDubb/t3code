@@ -13,6 +13,17 @@ an existing worktree, use **New thread in this worktree** from the branch toolba
 When you change a new thread's project, T3 Code stays in the current environment
 if that project exists there. Otherwise it selects an environment that has it.
 
+### Chat without an existing project
+
+Choose **No project** in the new-thread picker, or **New chat without a project**
+in the command palette. Each chat gets its own folder under
+`~/Documents/t3code/projects` on the selected environment. On mobile, choose
+**No project** when selecting a project for a new task.
+
+Scratch folders use local-folder mode and do not require Git. Git-based turn
+diffs and checkpoint restoration become available if you initialize a repository
+in the chat's folder. Removing a scratch project from T3 Code keeps its files.
+
 ### Start in the background
 
 In a desktop browser or the desktop app, press `Cmd+Enter` on macOS or `Ctrl+Enter`

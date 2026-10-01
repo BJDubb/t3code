@@ -5,6 +5,7 @@ import { threadPullRequestSearchTerms } from "@t3tools/shared/threadPullRequests
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FlatList,
+  Alert,
   KeyboardAvoidingView,
   Modal,
   Pressable,
@@ -30,6 +31,7 @@ import { useSavedRemoteConnections } from "../../state/use-remote-environment-re
 import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { ThreadSearchMatchExcerpt } from "../threads/thread-search-match";
+import { useCreateScratchProject } from "../threads/useCreateScratchProject";
 import {
   filterCommandPaletteItems,
   nextPaletteIndex,
@@ -137,6 +139,7 @@ export function CommandPalette(props: {
   readonly onCommand: (command: HardwareKeyboardCommand) => void;
 }) {
   const navigation = useNavigation();
+  const createScratchProject = useCreateScratchProject();
   const { themeVariables } = useAppearancePreferences();
   const { selectThread } = useAdaptiveWorkspaceLayout();
   const runCommand = props.onCommand;
@@ -248,6 +251,36 @@ export function CommandPalette(props: {
           }),
       },
     ];
+    actions.push(
+      ...environments
+        .filter((environment) => environment.connectionState === "connected")
+        .map((environment) => ({
+          key: `scratch:${environment.environmentId}`,
+          kind: "action" as const,
+          title: "New chat without a project",
+          detail: environment.environmentLabel,
+          searchTerms: ["scratch", "no project", "new chat"],
+          run: () => {
+            void createScratchProject(environment.environmentId)
+              .then((project) =>
+                navigation.navigate("NewTaskSheet", {
+                  screen: "NewTaskDraft",
+                  params: {
+                    environmentId: project.environmentId,
+                    projectId: project.id,
+                    title: project.title,
+                  },
+                }),
+              )
+              .catch((error) =>
+                Alert.alert(
+                  "Could not start chat",
+                  error instanceof Error ? error.message : String(error),
+                ),
+              );
+          },
+        })),
+    );
     const projectByKey = new Map(
       projects.map((project) => [scopedProjectKey(project.environmentId, project.id), project]),
     );
@@ -331,6 +364,8 @@ export function CommandPalette(props: {
       });
     return [...actions, ...projectItems, ...threadItems];
   }, [
+    createScratchProject,
+    environments,
     activeThread,
     activeThreadRef,
     navigation,

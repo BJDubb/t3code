@@ -35,6 +35,21 @@ export function canCreateProjectInEnvironment(
   return connectionPhase === "connected";
 }
 
+/** Each scratch chat owns a child directory on the target environment. */
+export function buildScratchProjectCreateCommand(input: {
+  readonly commandId: CommandId;
+  readonly projectId: ProjectId;
+  readonly createdAt: string;
+}): Extract<OrchestrationCommand, { type: "project.create" }> {
+  return {
+    ...buildProjectCreateCommand({
+      ...input,
+      workspaceRoot: `~/Documents/t3code/projects/chat-${input.projectId}`,
+    }),
+    title: `Scratch chat · ${input.createdAt.slice(0, 16).replace("T", " ")}`,
+  };
+}
+
 export type AddProjectRemoteSourceReadiness = Record<
   AddProjectRemoteSource,
   { readonly ready: boolean; readonly hint: string | null }

@@ -18,6 +18,9 @@ import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollVie
 import { AppText as Text } from "../../components/AppText";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
 import { useProjects } from "../../state/entities";
+import { useEnvironments } from "../../state/environments";
+import { useCreateScratchProject } from "./useCreateScratchProject";
+import type { EnvironmentId } from "@t3tools/contracts";
 import type { WorkspaceState } from "../../state/workspaceModel";
 import { useWorkspaceState } from "../../state/workspace";
 import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
@@ -127,6 +130,9 @@ function NewTaskHeader(props: {
 
 export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRouteParams | undefined>) {
   const projects = useProjects();
+  const { environments } = useEnvironments();
+  const createScratchProject = useCreateScratchProject();
+  const [creatingScratch, setCreatingScratch] = useState(false);
   const [searchText, setSearchText] = useState("");
   const { projectScopes, selectedEnvironmentId, setProject } = useNewTaskFlow();
   const { state: catalogState } = useWorkspaceState();
@@ -189,6 +195,18 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
     );
   }
 
+  async function startScratchChat(environmentId: EnvironmentId) {
+    if (creatingScratch) return;
+    setCreatingScratch(true);
+    try {
+      await selectProject(await createScratchProject(environmentId));
+    } catch (error) {
+      Alert.alert("Could not start chat", error instanceof Error ? error.message : String(error));
+    } finally {
+      setCreatingScratch(false);
+    }
+  }
+
   useEffect(() => {
     const destination = incomingShare?.destination;
     if (!destination) {
@@ -246,6 +264,17 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
               : {}),
           }}
         >
+          {environments
+            .filter((environment) => environment.connection.phase === "connected")
+            .map((environment) => (
+              <MaterialListRow
+                key={`scratch:${environment.environmentId}`}
+                title="No project"
+                subtitle={`New chat in its own folder · ${environment.label}`}
+                disabled={creatingScratch || reservedDestinationProject !== null}
+                onPress={() => void startScratchChat(environment.environmentId)}
+              />
+            ))}
           {projectScopes.length === 0 ? (
             <View
               collapsable={false}

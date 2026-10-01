@@ -20,8 +20,17 @@ export function NoProjectsHero() {
           <div className="w-full max-w-lg px-8 py-12">
             <EmptyHeader className="max-w-none">
               <EmptyTitle>What should we work on?</EmptyTitle>
-              <EmptyDescription>Add a project to start your first thread.</EmptyDescription>
-              <div className="mt-6 flex justify-center">
+              <EmptyDescription>
+                Start a chat in its own folder, or add an existing project.
+              </EmptyDescription>
+              <div className="mt-6 flex justify-center gap-3">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => openCommandPalette({ open: "new-thread-in" })}
+                >
+                  Start without a project
+                </Button>
                 <Button size="sm" onClick={openAddProject}>
                   <PlusIcon className="size-4" />
                   Add project

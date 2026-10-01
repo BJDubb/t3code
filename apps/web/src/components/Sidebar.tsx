@@ -4583,6 +4583,9 @@ export default function Sidebar() {
               }
               onNewProject={openAddProjectCommandPalette}
               onNewThread={handleNewThreadClick}
+              onNewScratchThread={() =>
+                openCommandPalette({ query: ">New chat without a project" })
+              }
               newThreadDisabled={projects.length === 0}
               newThreadShortcutLabel={newThreadShortcutLabel}
               newThreadInProjectShortcutLabel={newThreadInProjectShortcutLabel}

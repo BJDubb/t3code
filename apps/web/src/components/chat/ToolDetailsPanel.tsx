@@ -13,7 +13,34 @@ import {
   resolveFileDiffPath,
 } from "../../lib/diffRendering";
 import { Dialog, DialogPopup, DialogHeader, DialogTitle } from "../ui/dialog";
+import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 import { ToolCopyButton, ToolTextBlock } from "./ToolTextBlock";
+import { useThread, useProject } from "../../state/entities";
+import { useRightPanelStore } from "../../rightPanelStore";
+import {
+  useFileContextMenuHandler,
+  resolveFileContextMenuAbsolutePath,
+} from "../../fileContextMenu";
+
+type ToolFileActions = {
+  threadRef: ScopedThreadRef | undefined;
+  workspaceRoot: string | undefined;
+  onOpenDiff: ((filePath: string) => void) | undefined;
+};
+
+// Retained edits may contain unified headers without Git metadata. Supply it so
+// the parser treats a/ and b/ as diff prefixes rather than parts of the filename.
+function toolPatchWithFileMetadata(diff: string): string {
+  if (/^diff --git /m.test(diff)) return diff;
+  return diff.replace(
+    /^--- (a\/[^\r\n]+|\/dev\/null)\r?\n\+\+\+ (b\/[^\r\n]+|\/dev\/null)/gm,
+    (headers: string, before: string, after: string) => {
+      const oldPath = before === "/dev/null" ? `a/${after.slice(2)}` : before;
+      const newPath = after === "/dev/null" ? `b/${before.slice(2)}` : after;
+      return `diff --git ${JSON.stringify(oldPath)} ${JSON.stringify(newPath)}\n${headers}`;
+    },
+  );
+}
 
 function record(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -116,15 +143,15 @@ function Fields({
 function EditDiff({
   change,
   theme,
-  onOpen,
+  fileActions,
 }: {
   change: Record<string, unknown>;
   theme: "light" | "dark";
-  onOpen?: (() => void) | undefined;
+  fileActions?: ToolFileActions | undefined;
 }) {
   const path = typeof change.path === "string" ? change.path : "Changed file";
   const diff = typeof change.diff === "string" ? change.diff : "";
-  const patch = getRenderablePatch(diff, `tool:${path}`);
+  const patch = getRenderablePatch(toolPatchWithFileMetadata(diff), `tool:${path}`);
   return (
     <section className="min-w-0">
       {patch?.kind !== "files" ? (
@@ -137,7 +164,7 @@ function EditDiff({
               key={resolveFileDiffPath(file)}
               file={file}
               theme={theme}
-              onOpen={onOpen}
+              fileActions={fileActions}
             />
           ))}
         </div>
@@ -157,6 +184,7 @@ export function ToolDetailsPanel({
   theme,
   threadRef,
   activityId,
+  fileActions,
 }: {
   title: string;
   text: string;
@@ -164,6 +192,7 @@ export function ToolDetailsPanel({
   theme: "light" | "dark";
   threadRef?: ScopedThreadRef;
   activityId?: string;
+  fileActions?: ToolFileActions | undefined;
 }) {
   const [open, setOpen] = useState(false);
   const [raw, setRaw] = useState(false);
@@ -179,7 +208,12 @@ export function ToolDetailsPanel({
     <div className="space-y-4">
       {changes.length ? (
         changes.map((change) => (
-          <EditDiff key={String(change.path ?? change.filename)} change={change} theme={theme} />
+          <EditDiff
+            key={String(change.path ?? change.filename)}
+            change={change}
+            theme={theme}
+            fileActions={fileActions}
+          />
         ))
       ) : (
         <>
@@ -288,13 +322,15 @@ export function SavedEditPanel({
   activityId,
   title,
   theme,
+  fileActions,
 }: {
   threadRef: ScopedThreadRef;
   activityId: string;
   title: string;
   theme: "light" | "dark";
+  fileActions: ToolFileActions;
 }) {
-  const [open, setOpen] = useState(false);
+  const [showFullPatch, setShowFullPatch] = useState(false);
   const result = useAtomValue(
     orchestrationEnvironment.toolOutput({
       environmentId: threadRef.environmentId,
@@ -309,12 +345,16 @@ export function SavedEditPanel({
           <EditDiff
             change={{ path: title, diff: value.contents }}
             theme={theme}
-            onOpen={() => setOpen(true)}
+            fileActions={fileActions}
           />
           {value.nextOffset !== null ? (
-            <p className="text-xs text-muted-foreground">
-              First page of a large patch. Open full patch for the remaining pages.
-            </p>
+            <button
+              type="button"
+              className="text-xs text-info-foreground hover:underline"
+              onClick={() => setShowFullPatch(true)}
+            >
+              Show full saved patch
+            </button>
           ) : null}
         </>
       ) : (
@@ -326,12 +366,12 @@ export function SavedEditPanel({
               : "Loading patch..."}
         </p>
       )}
-      {open ? (
+      {showFullPatch ? (
         <ToolOutputViewer
-          theme={theme}
           threadRef={threadRef}
           activityId={activityId}
-          onClose={() => setOpen(false)}
+          theme={theme}
+          onClose={() => setShowFullPatch(false)}
         />
       ) : null}
     </section>
@@ -352,13 +392,36 @@ function ToolResult({ value, theme }: { value: unknown; theme: "light" | "dark" 
 function CompactToolDiff({
   file,
   theme,
-  onOpen,
+  fileActions,
 }: {
   file: FileDiffMetadata;
   theme: "light" | "dark";
-  onOpen?: (() => void) | undefined;
+  fileActions?: ToolFileActions | undefined;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const filePath = resolveFileDiffPath(file);
+  const thread = useThread(fileActions?.threadRef ?? null);
+  const project = useProject(
+    thread?.projectId ? { environmentId: thread.environmentId, projectId: thread.projectId } : null,
+  );
+  const onFileContextMenu = useFileContextMenuHandler(
+    fileActions?.threadRef?.environmentId ?? null,
+  );
+  const target = {
+    environmentId: fileActions?.threadRef?.environmentId ?? null,
+    filePath,
+    workspaceRoot: fileActions?.workspaceRoot,
+    repositoryRoot:
+      thread?.worktreePath == null ? project?.repositoryIdentity?.rootPath : undefined,
+  };
+  const absolutePath = resolveFileContextMenuAbsolutePath(target);
+  const threadRef = fileActions?.threadRef;
+  const openFile =
+    threadRef && absolutePath && file.type !== "deleted"
+      ? () => useRightPanelStore.getState().openFile(threadRef, absolutePath)
+      : undefined;
+  const onOpenDiff = fileActions?.onOpenDiff;
+  const openDiff = onOpenDiff ? () => onOpenDiff(filePath) : undefined;
   const stats = getDiffLineStat([file]);
   const language = getFiletypeFromFileName(resolveFileDiffPath(file));
   const [highlightReady, setHighlightReady] = useState(false);
@@ -375,17 +438,28 @@ function CompactToolDiff({
   return (
     <section className="overflow-hidden rounded-lg border border-border/80 bg-muted/15">
       <div className="flex items-center gap-2 border-b border-border/70 px-3 py-1.5 text-xs">
-        <button
-          type="button"
-          onClick={onOpen}
-          disabled={!onOpen}
-          aria-label={`Open patch for ${resolveFileDiffPath(file)}`}
-          className="min-w-0 truncate text-info-foreground underline decoration-current/40 underline-offset-2 enabled:hover:decoration-current focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          {resolveFileDiffPath(file).replace(/\\/g, "/").split("/").at(-1)}
-        </button>
-        <span className="text-emerald-400 light:text-emerald-700">+{stats.additions}</span>
-        <span className="text-rose-400 light:text-rose-700">-{stats.deletions}</span>
+        <Tooltip>
+          <TooltipTrigger
+            render={<button type="button" />}
+            onClick={openFile ?? openDiff}
+            disabled={!openDiff && !openFile}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onFileContextMenu(
+                { ...target, onOpenInternal: openFile, onOpenDiff: openDiff, canCopyPath: true },
+                event,
+              );
+            }}
+            aria-label={`Open ${openFile ? "file" : "diff"} for ${filePath}`}
+            className="min-w-0 truncate text-info-foreground underline decoration-current/40 underline-offset-2 enabled:hover:decoration-current focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {resolveFileDiffPath(file).replace(/\\/g, "/").split("/").at(-1)}
+          </TooltipTrigger>
+          <TooltipPopup variant="code">{absolutePath ?? filePath}</TooltipPopup>
+        </Tooltip>
+        <span className="text-diff-addition">+{stats.additions}</span>
+        <span className="text-diff-deletion">-{stats.deletions}</span>
       </div>
       <div
         className={

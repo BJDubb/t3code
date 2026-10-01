@@ -17,6 +17,15 @@ const EMPTY_CAPABILITIES = {
 };
 
 describe("resolveFileContextMenuAbsolutePath", () => {
+  it("preserves an absolute Windows tool path on its environment", () => {
+    expect(
+      resolveFileContextMenuAbsolutePath({
+        ...BASE_TARGET,
+        workspaceRoot: "C:\\workspace",
+        filePath: "C:\\workspace\\src\\index.ts",
+      }),
+    ).toBe("C:\\workspace\\src\\index.ts");
+  });
   it("joins workspace-relative diff paths onto the workspace root", () => {
     expect(resolveFileContextMenuAbsolutePath(BASE_TARGET)).toBe("/workspace/project/src/index.ts");
   });
@@ -55,6 +64,18 @@ describe("resolveFileContextMenuAbsolutePath", () => {
 });
 
 describe("buildFileContextMenuItems", () => {
+  it("offers internal file and diff viewers and copying without external editors", () => {
+    expect(
+      buildFileContextMenuItems({
+        hasAbsolutePath: true,
+        capabilities: EMPTY_CAPABILITIES,
+        canOpenInternal: true,
+        canOpenDiff: true,
+        canCopyPath: true,
+      }).map((item) => item.id),
+    ).toEqual(["open-internally", "open-diff", "copy-path"]);
+  });
+
   it("offers open, reveal, and an open-with submenu when all are available", () => {
     const items = buildFileContextMenuItems({
       hasAbsolutePath: true,

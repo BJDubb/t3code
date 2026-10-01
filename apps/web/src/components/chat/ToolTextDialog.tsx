@@ -25,7 +25,7 @@ export function ToolTextDialog({
         className="flex max-h-[85dvh] w-[min(72rem,calc(100vw-2rem))] max-w-none flex-col overflow-hidden"
         bottomStickOnMobile={false}
       >
-        <DialogHeader className="shrink-0 pr-12">
+        <DialogHeader className="shrink-0">
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
         <div className="flex justify-end px-5">

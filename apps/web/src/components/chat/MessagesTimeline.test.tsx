@@ -571,6 +571,7 @@ describe("MessagesTimeline", () => {
       resolveTimelineMinimapHitStripWidth,
       resolveTimelineMinimapIndexFromPointer,
       resolveTimelineMinimapInteractiveWidth,
+      resolveTimelineMinimapNavigationInteractive,
       resolveTimelineMinimapTopPercent,
     } = await import("./MessagesTimeline.logic");
 
@@ -655,22 +656,39 @@ describe("MessagesTimeline", () => {
         itemBounds: [{ top: 80, height: 20 }],
       }),
     ).toBeNull();
-    expect(resolveTimelineMinimapHasPersistentGutter(832)).toBe(false);
-    expect(resolveTimelineMinimapHasPersistentGutter(863)).toBe(false);
-    expect(resolveTimelineMinimapHasPersistentGutter(864)).toBe(true);
+    // Comfortable width: the column is capped at 768px.
+    expect(resolveTimelineMinimapHasPersistentGutter(832, 768)).toBe(false);
+    expect(resolveTimelineMinimapHasPersistentGutter(863, 768)).toBe(false);
+    expect(resolveTimelineMinimapHasPersistentGutter(864, 768)).toBe(true);
+    // Wider Chat width settings consume the gutter the minimap relies on.
+    expect(resolveTimelineMinimapHasPersistentGutter(1400, 1152)).toBe(true);
+    expect(resolveTimelineMinimapHasPersistentGutter(1200, 1152)).toBe(false);
+    expect(resolveTimelineMinimapHasPersistentGutter(2560, 2560)).toBe(false);
 
     // No usable gutter (zoomed in / narrow pane): the strip must go inert
     // instead of overlaying the centered content column.
-    expect(resolveTimelineMinimapHitStripWidth(768)).toBe(0);
-    expect(resolveTimelineMinimapHitStripWidth(792)).toBe(0);
+    expect(resolveTimelineMinimapHitStripWidth(768, 768)).toBe(0);
+    expect(resolveTimelineMinimapHitStripWidth(792, 768)).toBe(0);
     // Partial gutter: strip shrinks to what fits between the viewport edge
     // and the content column.
-    expect(resolveTimelineMinimapHitStripWidth(820)).toBe(14);
+    expect(resolveTimelineMinimapHitStripWidth(820, 768)).toBe(14);
     // Full gutter: unchanged 40px-wide strip.
-    expect(resolveTimelineMinimapHitStripWidth(872)).toBe(40);
-    expect(resolveTimelineMinimapHitStripWidth(1400)).toBe(40);
-    expect(resolveTimelineMinimapHitStripWidth(0)).toBe(0);
-    expect(resolveTimelineMinimapHitStripWidth(Number.NaN)).toBe(0);
+    expect(resolveTimelineMinimapHitStripWidth(872, 768)).toBe(40);
+    expect(resolveTimelineMinimapHitStripWidth(1400, 768)).toBe(40);
+    // Full Chat width: the column spans the viewport, so the strip is inert
+    // however wide the window gets.
+    expect(resolveTimelineMinimapHitStripWidth(2560, 2560)).toBe(0);
+    // Wide Chat width on a window just wider than the column: partial strip.
+    expect(resolveTimelineMinimapHitStripWidth(1204, 1152)).toBe(14);
+    expect(resolveTimelineMinimapHitStripWidth(0, 0)).toBe(0);
+    expect(resolveTimelineMinimapHitStripWidth(Number.NaN, 768)).toBe(0);
+
+    // Prev/next buttons reach 14px past the strip's left edge; a narrower
+    // strip means they would sit on the content column.
+    expect(resolveTimelineMinimapNavigationInteractive(40)).toBe(true);
+    expect(resolveTimelineMinimapNavigationInteractive(14)).toBe(true);
+    expect(resolveTimelineMinimapNavigationInteractive(8)).toBe(false);
+    expect(resolveTimelineMinimapNavigationInteractive(0)).toBe(false);
 
     // The collapsed target stays narrow, but an open preview keeps its full
     // 20rem width plus the 2rem offset from the minimap rail interactive.
@@ -1320,7 +1338,7 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain('aria-label="Copy link"');
+    expect(markup).toContain('aria-label="Copy message"');
     expect(markup).toContain('data-user-message-collapsed="true"');
     expect(markup).toContain('data-user-message-footer="true"');
   });
@@ -1469,6 +1487,90 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain("Running");
     expect(markup).toContain("tool call failed");
   });
+
+  it.each(
+    (
+      [
+        [
+          "**Viewing image first** with *care*, ~~old~~ `code` and [context](https://example.com)",
+          "Viewing image first with care, old code and context",
+          1,
+        ],
+        ["first paragraph\n\nsecond paragraph", "first paragraph second paragraph", 0],
+        ["- first\n- second", "first second", 0],
+        ["first  \nsecond", "first second", 0],
+        ["![image description](image.png)", "image description", 0],
+        ["![](image.png)", "Thought", 0],
+        ["---", "Thought", 0],
+      ] as const
+    ).flatMap(([markdown, expected, strongCount]) =>
+      [false, true].map((streaming) => ({
+        markdown,
+        expected,
+        strongCount,
+        streaming,
+      })),
+    ),
+  )(
+    "shows thinking expanded and preserves manual collapse for $markdown, streaming=$streaming",
+    async ({ markdown, strongCount, streaming }) => {
+      vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+      vi.stubGlobal("requestAnimationFrame", () => 0);
+      vi.stubGlobal("cancelAnimationFrame", () => {});
+      const turnId = TurnId.make("turn-thought");
+      const thought = buildAssistantTimelineEntry(markdown);
+      let renderer: ReactTestRenderer | undefined;
+      try {
+        await act(() => {
+          renderer = create(
+            <MessagesTimeline
+              {...buildProps()}
+              isWorking
+              runningTurnId={turnId}
+              timelineEntries={[
+                {
+                  id: "work-entry",
+                  kind: "work",
+                  createdAt: MESSAGE_CREATED_AT,
+                  entry: {
+                    id: "work",
+                    createdAt: MESSAGE_CREATED_AT,
+                    turnId,
+                    label: "Read image",
+                    tone: "tool",
+                    itemType: "command_execution",
+                    command: "cat image.png",
+                    toolLifecycleStatus: "completed",
+                  },
+                },
+                {
+                  ...thought,
+                  message: { ...thought.message, role: "reasoning", turnId, streaming },
+                },
+              ]}
+            />,
+          );
+        });
+        const header = renderer!.root
+          .findAllByType("button")
+          .find(
+            (button) =>
+              button.findAll((node) => node.type === "span" && node.children.includes("Thought"))
+                .length > 0,
+          )!;
+        expect(header.props["aria-expanded"]).toBe(true);
+        expect(renderer!.root.findAllByType("strong")).toHaveLength(strongCount);
+        await act(() => header.props.onClick());
+        expect(header.props["aria-expanded"]).toBe(false);
+        expect(renderer!.root.findAllByType("strong")).toHaveLength(0);
+        await act(() => header.props.onClick());
+        expect(header.props["aria-expanded"]).toBe(true);
+        expect(renderer!.root.findAllByType("strong")).toHaveLength(strongCount);
+      } finally {
+        await act(() => renderer?.unmount());
+      }
+    },
+  );
 
   it("renders initial thinking as the shared live activity row", () => {
     const turnId = TurnId.make("turn-live");

@@ -888,7 +888,7 @@ function MarkdownCodeBlock(props: {
       >
         <NativeText
           selectable
-          selectionColorClassName={Platform.OS === "android" ? "accent-primary/32" : undefined}
+          selectionColorClassName={Platform.OS === "android" ? "accent-focus/32" : undefined}
           className="font-mono"
           style={{
             color: props.textColor,
@@ -1362,7 +1362,7 @@ function renderFeedEntry(
   > & {
     readonly copiedRowId: string | null;
     readonly expandedWorkRows: Record<string, boolean>;
-    readonly expandedReasoningMessageIds: ReadonlySet<string>;
+    readonly collapsedReasoningMessageIds: ReadonlySet<string>;
     readonly workRowSizing: ReturnType<typeof deriveThreadWorkLogSizing>;
     readonly workGroupScrollPositions: Map<string, ThreadWorkGroupScrollPosition>;
     readonly terminalAssistantMessageIds: ReadonlySet<string>;
@@ -1400,7 +1400,7 @@ function renderFeedEntry(
         accessibilityState={{ expanded: entry.expanded }}
         onPress={() => props.onToggleTurnFold(entry.turnId)}
         hitSlop={4}
-        className="mb-1 min-h-11 flex-row items-center gap-2 border-b border-adaptive-neutral-200-a80-white-a8 px-2"
+        className="mb-1 min-h-11 flex-row items-center gap-2 border-b border-border-subtle px-2"
         style={{
           minHeight: Math.max(TURN_FOLD_HEIGHT - 3.5, props.workRowSizing.estimatedRowHeight),
         }}
@@ -1467,7 +1467,7 @@ function renderFeedEntry(
         accessibilityLabel={label}
         className="mb-3 flex-row items-center gap-3 px-1 py-1"
       >
-        <View className="h-px flex-1 bg-adaptive-neutral-200-a80-white-a8" />
+        <View className="h-px flex-1 bg-subtle" />
         <View className="shrink-0 flex-row items-center gap-1.5">
           <SymbolView
             name="arrow.down.right.and.arrow.up.left"
@@ -1477,7 +1477,7 @@ function renderFeedEntry(
           />
           <Text className="font-t3-medium text-xs text-foreground-muted">{label}</Text>
         </View>
-        <View className="h-px flex-1 bg-adaptive-neutral-200-a80-white-a8" />
+        <View className="h-px flex-1 bg-subtle" />
       </View>
     );
   }
@@ -1490,7 +1490,7 @@ function renderFeedEntry(
         <ThreadReasoningRow
           rowSizing={props.workRowSizing}
           iconSubtleColor={iconSubtleColor}
-          expanded={props.expandedReasoningMessageIds.has(entry.id)}
+          expanded={!props.collapsedReasoningMessageIds.has(entry.id)}
           label={`Thought${messages.length > 1 ? ` (×${messages.length})` : ""}`}
           streaming={false}
           onToggle={() => props.onToggleReasoning(entry.id)}
@@ -1599,8 +1599,8 @@ function renderFeedEntry(
                       mimeType={attachment.mimeType}
                       className={
                         inlineAttachmentIds.size
-                          ? "h-24 w-24 rounded-[14px] bg-white/15"
-                          : "aspect-[1.3] w-full rounded-[14px] bg-white/15"
+                          ? "h-24 w-24 rounded-[14px] bg-user-bubble-foreground/15"
+                          : "aspect-[1.3] w-full rounded-[14px] bg-user-bubble-foreground/15"
                       }
                       onPressPreview={props.onPressPreview}
                     />
@@ -1636,7 +1636,7 @@ function renderFeedEntry(
             ) : null}
           </View>
           <View className="mt-1 flex-row items-center justify-end gap-1 pr-0.5">
-            <Text className="font-t3-medium text-xs tabular-nums text-adaptive-neutral-600-400">
+            <Text className="font-t3-medium text-xs tabular-nums text-foreground-secondary">
               {entry.pendingMessage && !entry.acknowledged ? "Pending" : timestampLabel}
             </Text>
             {entry.pendingMessage &&
@@ -1715,7 +1715,7 @@ function renderFeedEntry(
               attachmentId={attachment.id}
               name={attachment.name}
               mimeType={attachment.mimeType}
-              className="mt-1.5 aspect-[1.3] w-full rounded-[18px] bg-adaptive-neutral-200-800"
+              className="mt-1.5 aspect-[1.3] w-full rounded-[18px] bg-subtle-strong"
               onPressPreview={props.onPressPreview}
             />
           ) : isFileAttachment(attachment) ? (
@@ -1739,7 +1739,7 @@ function renderFeedEntry(
               buttonSize={28}
               iconSize={13}
             />
-            <Text className="font-t3-medium text-xs tabular-nums text-adaptive-neutral-600-400">
+            <Text className="font-t3-medium text-xs tabular-nums text-foreground-secondary">
               {timestampLabel}
             </Text>
           </View>
@@ -2011,20 +2011,20 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     readonly expandedWorkGroups: Record<string, boolean>;
     readonly expandedWorkRows: Record<string, boolean>;
     readonly expandedTurnIds: ReadonlySet<TurnId>;
-    readonly expandedReasoningMessageIds: ReadonlySet<string>;
+    readonly collapsedReasoningMessageIds: ReadonlySet<string>;
   }>({
     copiedRowId: null,
     expandedWorkGroups: {},
     expandedWorkRows: {},
     expandedTurnIds: new Set(),
-    expandedReasoningMessageIds: new Set(),
+    collapsedReasoningMessageIds: new Set(),
   });
   const {
     copiedRowId,
     expandedWorkGroups,
     expandedWorkRows,
     expandedTurnIds,
-    expandedReasoningMessageIds,
+    collapsedReasoningMessageIds,
   } = interactionState;
   const [expandedFile, setExpandedFile] = useState<FilePreviewSource | null>(null);
   const [expandedVideo, setExpandedVideo] = useState<VideoPreviewSource | null>(null);
@@ -2291,7 +2291,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       unsettledTurnId,
       copiedRowId,
       expandedWorkRows,
-      expandedReasoningMessageIds,
+      collapsedReasoningMessageIds,
       workRowSizing,
       iconSubtleColor,
       markdownStyles,
@@ -2307,7 +2307,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       unsettledTurnId,
       copiedRowId,
       expandedWorkRows,
-      expandedReasoningMessageIds,
+      collapsedReasoningMessageIds,
       workRowSizing,
       iconSubtleColor,
       markdownStyles,
@@ -2477,7 +2477,10 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   // content-inset override. Seed the fresh instance synchronously with the
   // current overlay height before the scroll integration's next reaction;
   // on Android the declarative contentInset floor covers this same window.
-  const listMountKey = `${feedThreadKey}:${presentedFeed.length === 0 ? "empty" : "filled"}`;
+  // The thinking row a running thread shows while its messages load is not
+  // content: the list must still remount, and so open at the end, when they
+  // arrive.
+  const listMountKey = `${feedThreadKey}:${presentedFeed.some((entry) => entry.type !== "thinking") ? "filled" : "empty"}`;
   useLayoutEffect(() => {
     const bottom = props.contentInsetEndAdjustment.value;
     if (bottom > 0) {
@@ -2587,7 +2590,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     expandedTurnIds,
     expandedWorkGroups,
     expandedWorkRows,
-    expandedReasoningMessageIds,
+    collapsedReasoningMessageIds,
     settleDisclosureAfterLayout,
   ]);
 
@@ -2677,13 +2680,13 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       // Reasoning details use their own row within the expanded activity history.
       suspendEndScrollMaintenanceForDisclosure(messageId);
       setInteractionState((current) => {
-        const next = new Set(current.expandedReasoningMessageIds);
+        const next = new Set(current.collapsedReasoningMessageIds);
         if (next.has(messageId)) {
           next.delete(messageId);
         } else {
           next.add(messageId);
         }
-        return { ...current, expandedReasoningMessageIds: next };
+        return { ...current, collapsedReasoningMessageIds: next };
       });
     },
     [suspendEndScrollMaintenanceForDisclosure],
@@ -2717,7 +2720,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       switch (entry.type) {
         case "message":
           // A collapsed reasoning row is the same chrome as a work toggle.
-          return entry.message.role === "reasoning" && !expandedReasoningMessageIds.has(entry.id)
+          return entry.message.role === "reasoning" && collapsedReasoningMessageIds.has(entry.id)
             ? WORK_GROUP_TOGGLE_HEIGHT
             : undefined;
         case "turn-fold":
@@ -2738,7 +2741,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
           return undefined;
       }
     },
-    [expandedReasoningMessageIds, expandedWorkRows, workRowSizing.fixedRowHeight],
+    [collapsedReasoningMessageIds, expandedWorkRows, workRowSizing.fixedRowHeight],
   );
 
   // Disclosures can mount existing offscreen rows as well as new work rows.
@@ -2756,7 +2759,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
             onEditPendingMessage: props.onEditPendingMessage,
             copiedRowId,
             expandedWorkRows,
-            expandedReasoningMessageIds,
+            collapsedReasoningMessageIds,
             workRowSizing,
             workGroupScrollPositions,
             terminalAssistantMessageIds,
@@ -2802,7 +2805,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       copiedRowId,
       disclosureToggleSettling,
       expandedWorkRows,
-      expandedReasoningMessageIds,
+      collapsedReasoningMessageIds,
       workRowSizing,
       workGroupScrollPositions,
       terminalAssistantMessageIds,

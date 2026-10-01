@@ -116,7 +116,7 @@ export interface RememberedTimelinePosition {
     readonly turns: ReadonlySet<TurnId>;
     readonly workGroups: ReadonlySet<string>;
     readonly spawnEntries: ReadonlySet<string>;
-    readonly reasoningMessages: ReadonlySet<string>;
+    readonly collapsedReasoningMessages: ReadonlySet<string>;
     readonly workGroupState: {
       visibleEntryCounts: Map<string, number>;
       expandedEntries: Set<string>;

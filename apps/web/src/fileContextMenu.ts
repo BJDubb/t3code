@@ -27,6 +27,9 @@ import { toastManager } from "./components/ui/toast";
 import { useAtomValue } from "@effect/atom-react";
 
 export type FileContextMenuAction =
+  | "open-internally"
+  | "open-diff"
+  | "copy-path"
   | "reveal-in-folder"
   | "open"
   /** Submenu parent; never the activated id. */
@@ -39,6 +42,9 @@ export interface FileContextMenuTarget {
   readonly filePath: string;
   readonly workspaceRoot: string | undefined;
   readonly repositoryRoot?: string | undefined;
+  readonly onOpenInternal?: (() => void) | undefined;
+  readonly onOpenDiff?: (() => void) | undefined;
+  readonly canCopyPath?: boolean | undefined;
 }
 
 /** Absolute path on the environment host, or null when it cannot be resolved. */
@@ -49,6 +55,12 @@ export interface FileContextMenuTarget {
  * treat as "no file actions available".
  */
 export function resolveFileContextMenuAbsolutePath(target: FileContextMenuTarget): string | null {
+  if (
+    target.workspaceRoot &&
+    (target.filePath.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(target.filePath))
+  ) {
+    return resolvePathLinkTarget(target.filePath, target.workspaceRoot);
+  }
   const workspaceFilePath = resolveDiffPathForWorkspace({
     filePath: target.filePath,
     workspaceRoot: target.workspaceRoot,
@@ -79,10 +91,16 @@ export interface FileContextMenuCapabilities {
 export function buildFileContextMenuItems(input: {
   readonly hasAbsolutePath: boolean;
   readonly capabilities: FileContextMenuCapabilities;
+  readonly canOpenInternal?: boolean;
+  readonly canOpenDiff?: boolean;
+  readonly canCopyPath?: boolean;
 }): readonly ContextMenuItem<FileContextMenuAction>[] {
   // Without a resolvable absolute path nothing here can act on the file.
   if (!input.hasAbsolutePath) return [];
   const items: ContextMenuItem<FileContextMenuAction>[] = [];
+  if (input.canOpenInternal) items.push({ id: "open-internally", label: "Open file in T3 Code" });
+  if (input.canOpenDiff) items.push({ id: "open-diff", label: "Open diff in T3 Code" });
+  if (input.canCopyPath) items.push({ id: "copy-path", label: "Copy path" });
   if (input.capabilities.canOpenDefault) {
     items.push({ id: "open", label: "Open", icon: "pencil" });
   }
@@ -140,6 +158,26 @@ export function useFileContextMenu(environmentId: EnvironmentId | null) {
     ): Promise<void> => {
       const absolutePath = resolveFileContextMenuAbsolutePath(target);
       if (absolutePath === null || environmentId === null) return;
+      if (action === "open-internally") {
+        target.onOpenInternal?.();
+        return;
+      }
+      if (action === "open-diff") {
+        target.onOpenDiff?.();
+        return;
+      }
+      if (action === "copy-path") {
+        try {
+          await navigator.clipboard.writeText(absolutePath);
+        } catch {
+          toastManager.add({
+            type: "error",
+            title: "Could not copy path",
+            description: absolutePath,
+          });
+        }
+        return;
+      }
 
       const reveal = action === "reveal-in-folder";
       const editor =
@@ -173,6 +211,9 @@ export function useFileContextMenu(environmentId: EnvironmentId | null) {
       const items = buildFileContextMenuItems({
         hasAbsolutePath: resolveFileContextMenuAbsolutePath(target) !== null,
         capabilities,
+        canOpenInternal: target.onOpenInternal !== undefined,
+        canOpenDiff: target.onOpenDiff !== undefined,
+        canCopyPath: target.canCopyPath === true,
       });
       if (items.length === 0 || api === undefined) return;
       const clicked = await api.contextMenu.show(items, position);
@@ -185,6 +226,9 @@ export function useFileContextMenu(environmentId: EnvironmentId | null) {
         buildFileContextMenuItems({
           hasAbsolutePath: resolveFileContextMenuAbsolutePath(target) !== null,
           capabilities,
+          canOpenInternal: target.onOpenInternal !== undefined,
+          canOpenDiff: target.onOpenDiff !== undefined,
+          canCopyPath: target.canCopyPath === true,
         }),
       capabilities,
       activate,

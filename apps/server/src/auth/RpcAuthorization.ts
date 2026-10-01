@@ -1,4 +1,5 @@
 import {
+  type DeviceListInput,
   AuthAccessReadScope,
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
@@ -37,6 +38,11 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.providerAuthStart]: AuthOrchestrationOperateScope,
   [WS_METHODS.providerConsumeResetCredit]: AuthOrchestrationOperateScope,
   [WS_METHODS.providerAuthComplete]: AuthOrchestrationOperateScope,
+  [WS_METHODS.chatGptReconnectProfile]: AuthOrchestrationOperateScope,
+  [WS_METHODS.chatGptImportProfile]: AuthOrchestrationOperateScope,
+  [WS_METHODS.chatGptHandoffSubscribe]: AuthOrchestrationOperateScope,
+  [WS_METHODS.codexAuthCallbackSubscribe]: AuthOrchestrationOperateScope,
+  [WS_METHODS.providerAuthRespond]: AuthOrchestrationOperateScope,
   [WS_METHODS.providerAuthCancel]: AuthOrchestrationOperateScope,
   [WS_METHODS.providerAuthLogout]: AuthOrchestrationOperateScope,
   [WS_METHODS.providerAuthSubscribe]: AuthOrchestrationOperateScope,
@@ -74,6 +80,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.pullRequestsStack]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsLinkedThreads]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsDetail]: AuthOrchestrationReadScope,
+  [WS_METHODS.pullRequestsPreview]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsActivity]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsThreadComments]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsDiffFileContents]: AuthOrchestrationReadScope,
@@ -180,3 +187,9 @@ export function requiredScopeForRpcMethod(method: string): AuthEnvironmentScope 
   }
   return requiredScope;
 }
+
+/** Retrying can install or restart tools even though ordinary listing is readable. */
+export const requiredScopeForDeviceList = (input: DeviceListInput): AuthEnvironmentScope =>
+  input.retryHostId || input.updateTool
+    ? AuthOrchestrationOperateScope
+    : AuthOrchestrationReadScope;

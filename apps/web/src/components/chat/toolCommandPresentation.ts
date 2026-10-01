@@ -6,12 +6,38 @@ export function displayShellCommand(command: string): string {
     );
   if (!match) return command;
   const body = match[1]!.trim();
+  // Some provider launchers encode one script argument using adjacent quoted
+  // fragments, e.g. '$r='"'reports'; "'Get-Content $r'. Decode only a complete,
+  // balanced argument; a partial parse must never hide another command.
+  const fragments = displayQuotedArgument(body);
+  if (fragments !== null) return fragments;
   const quote = body[0];
   if ((quote === "'" || quote === '"') && body.endsWith(quote)) {
     const inner = body.slice(1, -1);
     return quote === '"' ? inner.replace(/\\"/g, '"') : inner;
   }
   return body;
+}
+
+function displayQuotedArgument(source: string): string | null {
+  if (!/^["']/.test(source)) return null;
+  let quote = "";
+  const quoteKinds = new Set<string>();
+  let text = "";
+  for (let i = 0; i < source.length; i++) {
+    const char = source[i]!;
+    if (quote) {
+      if (char === quote) quote = "";
+      else if (char === "\\" && quote === '"' && /["\\$`]/.test(source[i + 1] ?? ""))
+        text += source[++i];
+      else text += char;
+    } else if (char === '"' || char === "'") {
+      quote = char;
+      quoteKinds.add(char);
+    } else if (/[\s;$`|&<>]/.test(char)) return null;
+    else text += char;
+  }
+  return quote || quoteKinds.size < 2 ? null : text;
 }
 
 function interpreterPresentation(invocation: string) {
@@ -34,6 +60,8 @@ function interpreterPresentation(invocation: string) {
  */
 export function commandScriptBody(original: string) {
   const command = displayShellCommand(original).trim();
+  if (/^\$[\w:]+\s*=/.test(command))
+    return { language: "powershell", label: "PowerShell script", text: command };
   const hereString = /^@(['"])\r?\n([\s\S]*?)\r?\n\1@\s*\|\s*([^\r\n]+)$/.exec(command);
   if (hereString) {
     const interpreter = interpreterPresentation(hereString[3]!);

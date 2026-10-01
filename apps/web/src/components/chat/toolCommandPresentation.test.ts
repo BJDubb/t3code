@@ -9,6 +9,14 @@ import { toolCommandPresentation, displayShellCommand } from "./toolCommandPrese
 import { toolTextPreview } from "./toolCommandPresentation";
 
 describe("tool command presentation", () => {
+  it("decodes a complete provider argument assembled from alternating quote fragments", () => {
+    const command = `pwsh -Command '$r='"'C:/reports'; "'$rows=Get-Content "$r/results.json"; $rows|Where-Object Status -eq '"'Exception'|Select-Object Name"`;
+    const script = `$r='C:/reports'; $rows=Get-Content "$r/results.json"; $rows|Where-Object Status -eq 'Exception'|Select-Object Name`;
+    expect(displayShellCommand(command)).toBe(script);
+    expect(commandScriptBody(command)).toMatchObject({ text: script, language: "powershell" });
+    expect(toolCommandPresentation(command).label).toBe("Run PowerShell script");
+    expect(commandNames(command)).toEqual([]);
+  });
   it("does not mistake quoted PowerShell source for an executable", () => {
     const source =
       '\'$r="C:/reports"; $rows=Get-Content "$r/results.json"; $rows | Select-Object Name\'';

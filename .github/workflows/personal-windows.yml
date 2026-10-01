@@ -40,7 +40,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify tool-call behavior
         run: |
-          vp test run apps/web/src/components/chat/toolCommandPresentation.test.ts apps/web/src/components/chat/MessagesTimeline.logic.test.ts apps/web/src/components/chat/MessagesTimeline.test.tsx apps/web/src/session-logic.test.ts apps/web/src/hooks/useNewScratchThread.test.ts packages/client-runtime/src/operations/projects.test.ts apps/server/src/orchestration/toolOutputQuery.test.ts
+          vp test run apps/web/src/components/chat/toolCommandPresentation.test.ts apps/web/src/components/chat/MessagesTimeline.logic.test.ts apps/web/src/components/chat/MessagesTimeline.test.tsx apps/web/src/session-logic.test.ts apps/web/src/hooks/useNewScratchThread.test.ts packages/client-runtime/src/operations/projects.test.ts apps/server/src/orchestration/toolOutputQuery.test.ts apps/server/src/checkpointing/CheckpointDiffQuery.test.ts apps/web/src/hooks/useWorkspaceMutationRefresh.lifecycle.test.ts
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify scoped Git diff previews
+        run: |
+          vp test run apps/server/src/vcs/GitVcsDriverCore.test.ts -t 'loads working-tree changes without|loads branch changes without'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Build unsigned installer without WSL
         run: |

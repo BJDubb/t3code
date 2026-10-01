@@ -266,7 +266,12 @@ export default function DiffPanel({
       ignoreWhitespace: diffIgnoreWhitespace,
       cacheScope: selectedTurn ? `turn:${selectedTurn.turnId}` : null,
     },
-    { enabled: isGitRepo && selectedTurn !== undefined },
+    {
+      enabled:
+        isGitRepo &&
+        selectedTurn?.status === "ready" &&
+        !selectedTurn.checkpointRef.startsWith("provider-diff:"),
+    },
   );
   const primaryBranchDiffPreview = useEnvironmentQuery(
     selectedTurnId === null && activeThread && activeCwd
@@ -274,6 +279,7 @@ export default function DiffPanel({
           environmentId: activeThread.environmentId,
           input: {
             cwd: activeCwd,
+            sourceKind: selectedGitScope === "unstaged" ? "working-tree" : "branch-range",
             ...(selectedBaseRef ? { baseRef: selectedBaseRef } : {}),
             ignoreWhitespace: diffIgnoreWhitespace,
           },
@@ -291,6 +297,7 @@ export default function DiffPanel({
           environmentId: activeThread.environmentId,
           input: {
             cwd: serverConfig.cwd,
+            sourceKind: selectedGitScope === "unstaged" ? "working-tree" : "branch-range",
             ...(selectedBaseRef ? { baseRef: selectedBaseRef } : {}),
             ignoreWhitespace: diffIgnoreWhitespace,
           },
@@ -310,7 +317,9 @@ export default function DiffPanel({
     (source) => source.kind === (selectedGitScope === "unstaged" ? "working-tree" : "branch-range"),
   );
   const refreshPreviewQuery = branchDiffPreview.refresh;
-  const refreshDiffFromUserAction = refreshPreviewQuery;
+  const refreshDiffFromUserAction = selectedTurn
+    ? activeCheckpointDiff.refresh
+    : refreshPreviewQuery;
 
   const currentLoadDiffFiles = useMemo<FileDiffContentsLoader | undefined>(() => {
     const preview = branchDiffPreview.data;
@@ -441,19 +450,24 @@ export default function DiffPanel({
 
   useEffect(() => {
     if (!canRefreshGitDiff) return;
-    const refreshOnFocus = () => refreshBranchDiffPreview();
+    const refreshOnFocus = () => {
+      if (!branchDiffPreview.isPending) refreshBranchDiffPreview();
+    };
     window.addEventListener("focus", refreshOnFocus);
     return () => window.removeEventListener("focus", refreshOnFocus);
-  }, [canRefreshGitDiff, refreshBranchDiffPreview]);
+  }, [canRefreshGitDiff, branchDiffPreview.isPending, refreshBranchDiffPreview]);
 
   useWorkspaceMutationRefresh({
     enabled: canRefreshGitDiff,
+    isPending: branchDiffPreview.isPending,
     mutationId: workspaceMutationId,
     refresh: refreshBranchDiffPreview,
     resourceKey: `diff:${activeThreadRefreshKey ?? ""}`,
   });
 
-  const isRefreshingDiff = branchDiffPreview.isPending || areFilePatchesPending;
+  const isRefreshingDiff = selectedTurn
+    ? activeCheckpointDiff.isPending
+    : branchDiffPreview.isPending || areFilePatchesPending;
   const renderableFileEntries = useMemo(
     () => renderableFiles.map(getCachedFileEntry),
     [renderableFiles],
@@ -845,7 +859,7 @@ export default function DiffPanel({
             layout="inline"
           />
         ) : null}
-        {canRefreshGitDiff && (
+        {(canRefreshGitDiff || (isGitRepo && selectedTurn?.status === "ready")) && (
           <Tooltip>
             <TooltipTrigger
               render={
@@ -854,6 +868,7 @@ export default function DiffPanel({
                   size="icon-sm"
                   variant="ghost"
                   aria-label={isRefreshingDiff ? "Refreshing diff" : "Refresh diff"}
+                  disabled={isRefreshingDiff}
                   onClick={refreshDiffFromUserAction}
                 />
               }
@@ -1018,7 +1033,13 @@ export default function DiffPanel({
                   <p>
                     {hasNoNetChanges
                       ? "No net changes in this selection."
-                      : "No patch available for this selection."}
+                      : selectedTurn &&
+                          (selectedTurn.status !== "ready" ||
+                            selectedTurn.checkpointRef.startsWith("provider-diff:"))
+                        ? "This turn has no saved checkpoint yet. Use Working tree to view current changes."
+                        : selectedPatchError
+                          ? "The diff could not be loaded. Refresh to retry."
+                          : "No patch available for this selection."}
                   </p>
                 </div>
               )

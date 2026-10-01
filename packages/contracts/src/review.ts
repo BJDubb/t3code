@@ -7,6 +7,8 @@ export const ReviewDiffPreviewInput = Schema.Struct({
   cwd: TrimmedNonEmptyString,
   baseRef: Schema.optional(TrimmedNonEmptyString),
   ignoreWhitespace: Schema.optionalKey(Schema.Boolean),
+  /** Omit to load both comparisons; otherwise compute only the selected one. */
+  sourceKind: Schema.optionalKey(Schema.Literals(["working-tree", "branch-range"])),
   file: Schema.optionalKey(
     Schema.Struct({
       path: Schema.NonEmptyString,

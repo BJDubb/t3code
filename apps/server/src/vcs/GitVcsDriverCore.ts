@@ -2406,6 +2406,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
   const getReviewDiffPreview = Effect.fn("getReviewDiffPreview")(function* (
     input: ReviewDiffPreviewInput,
   ) {
+    const sourceKind = input.file?.sourceKind ?? input.sourceKind;
     const pathArgs = input.file
       ? [input.file.path, ...(input.file.previousPath ? [input.file.previousPath] : [])].map(
           (path) => `:(top,literal)${path}`,
@@ -2431,10 +2432,14 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     const cwd = repository.worktreeRoot;
     const branch = repository.currentBranch;
     const baseRef =
-      input.baseRef ??
-      (branch
-        ? yield* resolveBaseBranchForNoUpstream(cwd, branch).pipe(Effect.orElseSucceed(() => null))
-        : null);
+      sourceKind === "working-tree"
+        ? null
+        : (input.baseRef ??
+          (branch
+            ? yield* resolveBaseBranchForNoUpstream(cwd, branch).pipe(
+                Effect.orElseSucceed(() => null),
+              )
+            : null));
 
     const diffArgs = [
       "diff",
@@ -2497,7 +2502,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       return { ...patch, files: stat.files };
     });
     const readDirty = Effect.gen(function* () {
-      if (input.file?.sourceKind === "branch-range") return yield* readTrackedDiff(null);
+      if (sourceKind === "branch-range") return yield* readTrackedDiff(null);
       const untracked = yield* executeGit(
         "GitVcsDriver.review.listUntracked",
         cwd,
@@ -2537,9 +2542,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       [
         readDirty,
         readTrackedDiff(
-          baseRef && branch && input.file?.sourceKind !== "working-tree"
-            ? `${baseRef}...HEAD`
-            : null,
+          baseRef && branch && sourceKind !== "working-tree" ? `${baseRef}...HEAD` : null,
         ),
       ],
       { concurrency: 2 },

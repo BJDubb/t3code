@@ -1981,7 +1981,7 @@ const makeWsRpcLayer = (
               Effect.mapError(
                 (cause) =>
                   new OrchestrationGetTurnDiffError({
-                    message: "Failed to load turn diff",
+                    message: `Failed to load turn diff: ${cause.message}`,
                     cause,
                   }),
               ),
@@ -1995,7 +1995,7 @@ const makeWsRpcLayer = (
               Effect.mapError(
                 (cause) =>
                   new OrchestrationGetFullThreadDiffError({
-                    message: "Failed to load full thread diff",
+                    message: `Failed to load full thread diff: ${cause.message}`,
                     cause,
                   }),
               ),

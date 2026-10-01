@@ -1092,6 +1092,56 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
   });
 
   describe("review diff previews", () => {
+    it.effect(
+      "loads working-tree changes without evaluating an unrelated invalid branch comparison",
+      () =>
+        Effect.gen(function* () {
+          const cwd = yield* makeTmpDir();
+          yield* initRepoWithCommit(cwd);
+          yield* writeTextFile(cwd, "untracked.txt", "current change\n");
+          const driver = yield* GitVcsDriver.GitVcsDriver;
+          const preview = yield* driver.getReviewDiffPreview({
+            cwd,
+            baseRef: "missing-branch",
+            sourceKind: "working-tree",
+          });
+          const dirty = preview.sources.find((source) => source.kind === "working-tree")!;
+          assert.include(dirty.diff, "current change");
+          assert.equal(preview.sources.find((source) => source.kind === "branch-range")!.diff, "");
+        }),
+    );
+
+    it.effect("loads branch changes without enumerating the dirty worktree", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const { initialBranch } = yield* initRepoWithCommit(cwd);
+        yield* git(cwd, ["checkout", "-b", "feature/scoped-review"]);
+        yield* writeTextFile(cwd, "branch.txt", "branch change\n");
+        yield* git(cwd, ["add", "."]);
+        yield* git(cwd, ["commit", "-m", "branch change"]);
+        const delegate = yield* ChildProcessSpawner.ChildProcessSpawner;
+        const spawner = ChildProcessSpawner.make((command) => {
+          if (ChildProcess.isStandardCommand(command) && command.args.includes("--others"))
+            return Effect.die("Branch review must not enumerate untracked files");
+          return delegate.spawn(command);
+        });
+        const driver = yield* makeGitVcsDriverCore().pipe(
+          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+          Effect.provide(ServerConfigLayer),
+        );
+        const preview = yield* driver.getReviewDiffPreview({
+          cwd,
+          baseRef: initialBranch,
+          sourceKind: "branch-range",
+        });
+        assert.include(
+          preview.sources.find((source) => source.kind === "branch-range")!.diff,
+          "branch change",
+        );
+        assert.equal(preview.sources.find((source) => source.kind === "working-tree")!.diff, "");
+      }),
+    );
+
     it.effect("loads repository-relative files from a nested project directory", () =>
       Effect.gen(function* () {
         const cwd = yield* makeTmpDir();

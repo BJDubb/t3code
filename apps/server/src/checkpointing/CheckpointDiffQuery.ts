@@ -144,7 +144,7 @@ export const make = Effect.gen(function* () {
           : threadContext.value.checkpoints.find(
               (checkpoint) => checkpoint.checkpointTurnCount === input.fromTurnCount,
             )?.checkpointRef;
-      if (!fromCheckpointRef) {
+      if (!fromCheckpointRef || fromCheckpointRef.startsWith("provider-diff:")) {
         return yield* new CheckpointRefUnavailableError({
           operation,
           threadId: input.threadId,
@@ -156,7 +156,7 @@ export const make = Effect.gen(function* () {
       const toCheckpointRef = threadContext.value.checkpoints.find(
         (checkpoint) => checkpoint.checkpointTurnCount === input.toTurnCount,
       )?.checkpointRef;
-      if (!toCheckpointRef) {
+      if (!toCheckpointRef || toCheckpointRef.startsWith("provider-diff:")) {
         return yield* new CheckpointRefUnavailableError({
           operation,
           threadId: input.threadId,
@@ -246,7 +246,10 @@ export const make = Effect.gen(function* () {
       });
     }
 
-    if (!threadContext.value.toCheckpointRef) {
+    if (
+      !threadContext.value.toCheckpointRef ||
+      threadContext.value.toCheckpointRef.startsWith("provider-diff:")
+    ) {
       return yield* new CheckpointRefUnavailableError({
         operation,
         threadId: input.threadId,

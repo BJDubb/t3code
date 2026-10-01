@@ -48,18 +48,19 @@ export function workspaceMutationRefreshToken(
  */
 export function useWorkspaceMutationRefresh(input: {
   readonly enabled?: boolean;
+  readonly isPending?: boolean;
   readonly mutationId: string | null;
   readonly refresh: () => void;
   readonly resourceKey: string;
 }): void {
-  const { enabled = true, mutationId, refresh, resourceKey } = input;
+  const { enabled = true, isPending = false, mutationId, refresh, resourceKey } = input;
   const handledTokenRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || isPending) return;
     const token = workspaceMutationRefreshToken(resourceKey, mutationId);
     if (token === null || token === handledTokenRef.current) return;
     handledTokenRef.current = token;
     refresh();
-  }, [enabled, mutationId, refresh, resourceKey]);
+  }, [enabled, isPending, mutationId, refresh, resourceKey]);
 }

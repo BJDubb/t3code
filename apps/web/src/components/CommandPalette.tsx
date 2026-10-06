@@ -1371,19 +1371,6 @@ function OpenCommandPaletteDialog(props: {
             );
           },
         }),
-        ...(scratchTargetEnvironmentId === null
-          ? []
-          : [
-              {
-                kind: "action" as const,
-                value: "new-thread-in:no-project",
-                searchTerms: ["no project", "without project", "none"],
-                title: "No project",
-                icon: <MessageSquareDashedIcon className={ITEM_ICON_CLASS} />,
-                shortcutCommand: "chat.newWithoutProject" as const,
-                run: () => startScratchThread(scratchTargetEnvironmentId),
-              },
-            ]),
       ]),
     [
       contextualProjectRef,
@@ -1391,9 +1378,7 @@ function OpenCommandPaletteDialog(props: {
       pickerProjects,
       projectEnvironmentLocationById,
       projectGroupByTargetKey,
-      scratchTargetEnvironmentId,
       scratchWorkspaceRootFor,
-      startScratchThread,
     ],
   );
 

@@ -31,6 +31,15 @@ jobs:
         run: |
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
           $installPath = & $vswhere -products * -latest -property installationPath
+          $toolsVersionFile = Join-Path $installPath 'VC\Auxiliary\Build\Microsoft.VCToolsVersion.default.txt'
+          if (Test-Path -LiteralPath $toolsVersionFile) {
+            $toolsVersion = (Get-Content -LiteralPath $toolsVersionFile -Raw).Trim()
+            $spectreLibrary = Join-Path $installPath "VC\Tools\MSVC\$toolsVersion\lib\spectre\x64\libcmt.lib"
+            if (Test-Path -LiteralPath $spectreLibrary) {
+              Write-Host 'Spectre libraries are already installed for the default x64 toolset.'
+              exit 0
+            }
+          }
           $setup = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\setup.exe"
           $process = Start-Process $setup -ArgumentList 'modify', '--installPath', "`"$installPath`"", '--add', 'Microsoft.VisualStudio.Component.VC.Runtimes.x86.x64.Spectre', '--quiet', '--norestart' -Wait -PassThru -WindowStyle Hidden
           if ($process.ExitCode -notin @(0, 3010)) { throw "Visual Studio setup failed: $($process.ExitCode)" }

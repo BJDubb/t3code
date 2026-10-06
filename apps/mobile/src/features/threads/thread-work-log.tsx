@@ -1,4 +1,6 @@
 import { QuestionAnswerHistory } from "./QuestionAnswerHistory";
+import { ToolSummaryCard } from "./ToolSummaryCard";
+import { summarizeTool } from "@t3tools/shared/toolSummary";
 import {
   getQuestionAnswerPreview,
   hasQuestionAnswer,
@@ -748,6 +750,7 @@ const ThreadWorkLogRow = memo(function ThreadWorkLogRow(
   const { row, expanded } = props;
   const canExpand = row.canExpand;
   const fullDetail = expanded ? row.getFullDetail() : null;
+  const toolSummary = expanded ? summarizeTool(row.workEntry.toolData) : undefined;
   const viewedImagePath = workEntryViewedImagePath(row.workEntry);
   const toolPresentation = resolveWorkEntryToolPresentation(row.workEntry);
   const previewText = workEntryRowLabel(row.workEntry);
@@ -879,7 +882,8 @@ const ThreadWorkLogRow = memo(function ThreadWorkLogRow(
         </View>
       </Pressable>
 
-      {expanded && (fullDetail || viewedImagePath || row.workEntry.questionAnswer) ? (
+      {expanded &&
+      (toolSummary || fullDetail || viewedImagePath || row.workEntry.questionAnswer) ? (
         <Animated.View
           entering={WORK_LOG_DETAIL_ENTER_TRANSITION}
           exiting={WORK_LOG_DETAIL_EXIT_TRANSITION}
@@ -904,9 +908,13 @@ const ThreadWorkLogRow = memo(function ThreadWorkLogRow(
             className="max-h-60"
             contentContainerStyle={{ paddingRight: 8 }}
           >
-            <Text selectable className="font-mono text-2xs leading-normal text-foreground-muted">
-              {fullDetail}
-            </Text>
+            {toolSummary ? (
+              <ToolSummaryCard summary={toolSummary} details={fullDetail} />
+            ) : (
+              <Text selectable className="font-mono text-2xs leading-normal text-foreground-muted">
+                {fullDetail}
+              </Text>
+            )}
           </ScrollView>
         </Animated.View>
       ) : null}

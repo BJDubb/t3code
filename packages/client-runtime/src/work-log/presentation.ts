@@ -10,6 +10,7 @@ import { classifyMarkdownImageSource } from "@t3tools/client-runtime/markdown-im
 import { resolveMediaSource } from "@t3tools/client-runtime/media-source";
 import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
 import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
+import { summarizeTool } from "@t3tools/shared/toolSummary";
 
 /**
  * Activities the worktree setup card already represents. The settled record
@@ -427,6 +428,8 @@ function workEntryIndicatesToolFailureFromOutput(
     return true;
   }
   if (!workLogEntryIsToolLike(entry)) return false;
+  const summary = summarizeTool(entry.toolData);
+  if (summary?.kind === "execution" && summary.failed) return true;
   const output = includeCommand
     ? [entry.detail, entry.command].filter(Boolean).join("\n")
     : (entry.detail ?? "");

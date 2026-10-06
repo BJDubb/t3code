@@ -632,9 +632,14 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   if (toolPresentation.toolSource) {
     entry.toolSource = toolPresentation.toolSource;
   }
-  if (itemType === "mcp_tool_call" || itemType === "file_change") {
+  if (itemType === "mcp_tool_call" || itemType === "file_change" || itemType === "web_search") {
     const data = asRecord(payload?.data);
-    const toolData = typeof data?.toolName === "string" ? (data.item ?? data) : data?.item;
+    const toolData =
+      itemType === "web_search"
+        ? (data ?? undefined)
+        : typeof data?.toolName === "string"
+          ? (data.item ?? data)
+          : data?.item;
     if (toolData !== undefined) {
       entry.toolData = toolData;
     }

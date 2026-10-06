@@ -2,6 +2,8 @@ import { EventId, type ScopedThreadRef } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { orchestrationEnvironment } from "../../state/orchestration";
 import { ToolOutputViewer } from "./ToolOutputViewer";
+import { summarizeTool } from "@t3tools/shared/toolSummary";
+import { ToolSummaryCard } from "./ToolSummaryCard";
 import { useEffect, useState } from "react";
 import { FileDiff } from "@pierre/diffs/react";
 import { getFiletypeFromFileName, type FileDiffMetadata } from "@pierre/diffs";
@@ -204,9 +206,46 @@ export function ToolDetailsPanel({
     : [];
   const result = obj?.result ?? obj?.output ?? obj?.response;
   const parameters = obj?.arguments ?? obj?.parameters ?? obj?.input;
-  const formatted = (
+  const summary = summarizeTool(data, text);
+  const formatted = (details = false) => (
     <div className="space-y-4">
-      {changes.length ? (
+      {summary ? (
+        <>
+          <ToolSummaryCard summary={summary} theme={theme} />
+          {threadRef && activityId && summary.kind !== "credentials" ? (
+            <button
+              type="button"
+              className="text-xs text-info-foreground hover:underline"
+              onClick={() => setShowOutput(true)}
+            >
+              Full output ↗
+            </button>
+          ) : null}
+          {details ? (
+            <>
+              {parameters !== undefined ? (
+                <section>
+                  <h4 className="mb-2 text-xs text-muted-foreground">Invocation details</h4>
+                  <Fields value={parameters} theme={theme} />
+                </section>
+              ) : null}
+              {summary.kind === "credentials"
+                ? summary.credentials.map((credential, index) => (
+                    <div
+                      key={credential.id ?? index}
+                      className="flex items-center justify-between gap-2 text-xs"
+                    >
+                      <span className="break-words">{credential.name}</span>
+                      {credential.id ? (
+                        <ToolCopyButton text={credential.id} label="Copy ID" />
+                      ) : null}
+                    </div>
+                  ))
+                : null}
+            </>
+          ) : null}
+        </>
+      ) : changes.length ? (
         changes.map((change) => (
           <EditDiff
             key={String(change.path ?? change.filename)}
@@ -263,7 +302,7 @@ export function ToolDetailsPanel({
         </button>
         <ToolCopyButton text={contents} />
       </div>
-      {formatted}
+      {formatted()}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogPopup
           className="flex max-h-[85dvh] w-[min(64rem,calc(100vw-2rem))] max-w-none flex-col overflow-hidden"
@@ -289,10 +328,17 @@ export function ToolDetailsPanel({
             >
               Raw JSON
             </button>
-            <ToolCopyButton text={contents} />
+            {!raw || !summary ? <ToolCopyButton text={contents} /> : null}
           </div>
           <div className="min-h-0 overflow-auto px-4 pb-4">
-            {raw ? (
+            {raw && threadRef && activityId && summary ? (
+              <RetainedToolJson
+                threadRef={threadRef}
+                activityId={activityId}
+                theme={theme}
+                data={data}
+              />
+            ) : raw ? (
               <ToolTextBlock
                 text={contents}
                 language={data !== undefined ? "json" : "text"}
@@ -300,7 +346,7 @@ export function ToolDetailsPanel({
                 preview={false}
               />
             ) : (
-              formatted
+              formatted(true)
             )}
           </div>
         </DialogPopup>
@@ -314,6 +360,51 @@ export function ToolDetailsPanel({
         />
       ) : null}
     </section>
+  );
+}
+
+function RetainedToolJson({
+  threadRef,
+  activityId,
+  theme,
+  data,
+}: {
+  threadRef: ScopedThreadRef;
+  activityId: string;
+  theme: "light" | "dark";
+  data: unknown;
+}) {
+  const result = useAtomValue(
+    orchestrationEnvironment.toolOutput({
+      environmentId: threadRef.environmentId,
+      input: { threadId: threadRef.threadId, activityId: EventId.make(activityId), offset: 0 },
+    }),
+  );
+  const value = result._tag === "Success" ? result.value : null;
+  const obj = record(data);
+  const rawData = { ...obj };
+  delete rawData.summary;
+  const contents = value?.available
+    ? summarizeTool(data)?.kind === "web"
+      ? value.contents
+      : JSON.stringify({ ...rawData, result: readableToolValue(value.contents) }, null, 2)
+    : JSON.stringify(data, null, 2);
+  return (
+    <div className="space-y-2">
+      {result._tag === "Initial" ? (
+        <p className="text-xs text-muted-foreground">Loading retained output…</p>
+      ) : null}
+      {result._tag === "Failure" ? (
+        <p className="text-xs text-muted-foreground">Could not load retained output.</p>
+      ) : null}
+      {value?.nextOffset !== null && value?.nextOffset !== undefined ? (
+        <p className="text-xs text-muted-foreground">
+          Raw output preview truncated. Use Full output to see the rest.
+        </p>
+      ) : null}
+      <ToolCopyButton text={contents ?? ""} />
+      <ToolTextBlock text={contents ?? ""} language="json" theme={theme} preview={false} />
+    </div>
   );
 }
 

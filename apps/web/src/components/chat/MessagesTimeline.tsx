@@ -1,4 +1,6 @@
 import { SavedEditPanel, ToolDetailsPanel } from "./ToolDetailsPanel";
+import { summarizeTool, toolSummaryLabel } from "@t3tools/shared/toolSummary";
+import { ToolUrlActions } from "./ToolSummaryCard";
 import { ArrowUpIcon, ClockIcon } from "lucide-react";
 import { ReadOnlySourcePreview } from "../files/AttachmentFilePreview";
 import { useRightPanelStore } from "~/rightPanelStore";
@@ -4650,6 +4652,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   };
   const iconConfig = workToneIcon(workEntry.tone);
   const showWarningIndicator = workEntry.sourceActivityKind === "runtime.warning";
+  const toolSummary = summarizeTool(workEntry.toolData);
   const showFailedIndicator = workEntryDisplayIndicatesToolFailure(workEntry);
   const showDestructiveRowStyle =
     showFailedIndicator &&
@@ -4668,15 +4671,17 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
       )
     : null;
   const imagePath = workEntryViewedImagePath(workEntry);
-  const previewText = workEntry.questionAnswer
-    ? getQuestionTextPreview(workEntry.questionAnswer) || "Question answer submitted"
-    : imagePath
-      ? imagePath.replace(/\\/g, "/").split("/").at(-1)!
-      : workEntry.changedFiles?.length
-        ? `Edited ${workEntry.changedFiles.map((path) => path.replace(/\\/g, "/").split("/").at(-1)).join(", ")}`
-        : (commandPresentation?.label ??
-          displayLabel ??
-          workEntryDisplayLabel(workEntry, workspaceRoot));
+  const previewText = toolSummary
+    ? toolSummaryLabel(toolSummary)
+    : workEntry.questionAnswer
+      ? getQuestionTextPreview(workEntry.questionAnswer) || "Question answer submitted"
+      : imagePath
+        ? imagePath.replace(/\\/g, "/").split("/").at(-1)!
+        : workEntry.changedFiles?.length
+          ? `Edited ${workEntry.changedFiles.map((path) => path.replace(/\\/g, "/").split("/").at(-1)).join(", ")}`
+          : (commandPresentation?.label ??
+            displayLabel ??
+            workEntryDisplayLabel(workEntry, workspaceRoot));
   const answerPreview =
     workEntry.questionAnswer && hasQuestionAnswer(workEntry.questionAnswer)
       ? getQuestionAnswerPreview(workEntry.questionAnswer)
@@ -4733,6 +4738,12 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   const accessibleDisplayText = showFailedIndicator
     ? `${accessiblePreview}, tool call failed`
     : accessiblePreview;
+  const singleWebUrl =
+    toolSummary?.kind === "web" &&
+    toolSummary.action !== "search" &&
+    toolSummary.results.length <= 1
+      ? (toolSummary.results[0]?.url ?? toolSummary.url)
+      : undefined;
   const rowToggleProps = canExpand
     ? {
         role: "button" as const,
@@ -4813,6 +4824,11 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
               ) : null}
             </p>
           </div>
+          {singleWebUrl ? (
+            <div className="hidden md:block">
+              <ToolUrlActions url={singleWebUrl} />
+            </div>
+          ) : null}
           {workLogEntryIsToolLike(workEntry) ? (
             <span
               className={cn(

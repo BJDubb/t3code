@@ -6,6 +6,7 @@ import type {
 } from "@t3tools/contracts";
 import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
 import { extractJsonObject } from "@t3tools/shared/schemaJson";
+import { summarizeTool } from "@t3tools/shared/toolSummary";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -337,6 +338,8 @@ function projectMcpToolCallData(data: Record<string, unknown>): Record<string, u
     if (result) {
       projectedItem.result = result;
     }
+    const summary = summarizeTool(item);
+    if (summary) projectedItem.summary = summary;
     projectedData.item = projectedItem;
   }
 
@@ -351,6 +354,8 @@ function projectMcpToolCallData(data: Record<string, unknown>): Record<string, u
     if (result) {
       projectedData.result = result;
     }
+    const summary = summarizeTool(data);
+    if (summary) projectedData.summary = summary;
   }
 
   if ("toolCallId" in data) {
@@ -463,6 +468,8 @@ export function projectActivityPayload(
   }
 
   const projectedData: Record<string, unknown> = { ...questionInput };
+  const summary = summarizeTool(data, undefined, payload.itemType === "web_search");
+  if (summary) projectedData.summary = summary;
   const item = projectCommandData(data);
   if (item) {
     projectedData.item = item;

@@ -4,8 +4,8 @@ import { resolveDiffThemeName } from "../../lib/diffRendering";
 import { writeTextToClipboard } from "../../hooks/useCopyToClipboard";
 import { shellDisplayTokens, toolTextPreview } from "./toolCommandPresentation";
 
-export function ToolCopyButton({ text }: { text: string }) {
-  const [status, setStatus] = useState("Copy");
+export function ToolCopyButton({ text, label = "Copy" }: { text: string; label?: string }) {
+  const [status, setStatus] = useState(label);
   return (
     <button
       type="button"

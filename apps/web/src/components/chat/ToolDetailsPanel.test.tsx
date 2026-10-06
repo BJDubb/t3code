@@ -5,6 +5,88 @@ import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vite-plus/test";
 import { ToolDetailsPanel } from "./ToolDetailsPanel";
 import { selectActiveRightPanelSurface, useRightPanelStore } from "../../rightPanelStore";
+import { writeTextToClipboard } from "../../hooks/useCopyToClipboard";
+
+vi.mock("../../hooks/useCopyToClipboard", () => ({
+  writeTextToClipboard: vi.fn().mockResolvedValue(undefined),
+}));
+
+it("shows execution output and failure before technical invocation details", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(
+        <ToolDetailsPanel
+          title="Passbolt"
+          text=""
+          theme="dark"
+          data={{
+            arguments: { script_sha256: "technical-hash", credentials: [{ id: "technical-uuid" }] },
+            result: {
+              exit_code: 2,
+              outcome: "completed",
+              stdout: "useful output",
+              stderr: "script failed",
+            },
+          }}
+        />,
+      ),
+    );
+    expect(container.textContent).toContain("Failed · Exit code 2");
+    expect(container.textContent).toContain("useful output");
+    expect(container.textContent).toContain("script failed");
+    expect(container.textContent).not.toContain("technical-hash");
+    expect(container.textContent).not.toContain("technical-uuid");
+  } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
+it("lets users open search sources and copy their exact URLs", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  const url = "https://example.com/help?topic=stock";
+  try {
+    await act(async () =>
+      root.render(
+        <ToolDetailsPanel
+          title="Web search"
+          text=""
+          theme="dark"
+          data={{
+            item: {
+              type: "webSearch",
+              action: { type: "search", query: "stock codes" },
+              results: [
+                {
+                  title: "Stock guide",
+                  domain: "example.com",
+                  url,
+                  snippet: "How to merge stock codes.",
+                },
+              ],
+            },
+          }}
+        />,
+      ),
+    );
+    expect(container.textContent).toContain("How to merge stock codes.");
+    expect(container.querySelector("a")?.getAttribute("href")).toBe(url);
+    const copy = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Copy URL",
+    );
+    await act(async () => copy!.click());
+    expect(writeTextToClipboard).toHaveBeenLastCalledWith(url, "tool details");
+    expect(copy?.textContent).toBe("Copied");
+  } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
 
 vi.mock("@pierre/diffs/react", () => ({ FileDiff: () => null }));
 vi.mock("../../lib/syntaxHighlighting", () => ({

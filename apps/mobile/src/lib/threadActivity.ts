@@ -1,4 +1,5 @@
 import * as Option from "effect/Option";
+import { summarizeTool, toolSummaryLabel } from "@t3tools/shared/toolSummary";
 import { foldUserInputActivities } from "@t3tools/client-runtime/work-log/user-input";
 import * as Schema from "effect/Schema";
 import {
@@ -598,9 +599,14 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   if (toolPresentation.toolSource) {
     entry.toolSource = toolPresentation.toolSource;
   }
-  if (itemType === "mcp_tool_call") {
+  if (itemType === "mcp_tool_call" || itemType === "web_search") {
     const data = asRecord(payload?.data);
-    const toolData = typeof data?.toolName === "string" ? (data.item ?? data) : data?.item;
+    const toolData =
+      itemType === "web_search"
+        ? (data ?? undefined)
+        : typeof data?.toolName === "string"
+          ? (data.item ?? data)
+          : data?.item;
     if (toolData !== undefined) {
       entry.toolData = toolData;
     }
@@ -998,8 +1004,13 @@ function buildWorkEntryExpandedBody(entry: WorkLogEntry): string | null {
     }
   };
 
-  if (entry.itemType === "mcp_tool_call" && entry.toolData !== undefined) {
-    appendBlock(`MCP call\n${JSON.stringify(entry.toolData, null, 2)}`);
+  if (
+    (entry.itemType === "mcp_tool_call" || entry.itemType === "web_search") &&
+    entry.toolData !== undefined
+  ) {
+    appendBlock(
+      `${entry.itemType === "web_search" ? "Web call" : "MCP call"}\n${JSON.stringify(entry.toolData, null, 2)}`,
+    );
   }
   appendBlock(entry.rawCommand ?? entry.command);
   appendBlock(entry.detail);
@@ -1018,7 +1029,11 @@ function buildWorkEntryExpandedBody(entry: WorkLogEntry): string | null {
 function workEntryCanExpand(entry: WorkLogEntry): boolean {
   if (entry.questionAnswer) return true;
   if (entry.agentSpawn) return agentSpawnMembers(entry.agentSpawn).length > 0;
-  if (entry.itemType === "mcp_tool_call" && entry.toolData !== undefined) return true;
+  if (
+    (entry.itemType === "mcp_tool_call" || entry.itemType === "web_search") &&
+    entry.toolData !== undefined
+  )
+    return true;
   if (entry.changedFiles?.some((path) => path.trim().length > 0)) return true;
   return Boolean((entry.rawCommand ?? entry.command)?.trim() || entry.detail?.trim());
 }
@@ -1035,6 +1050,8 @@ function stripShellWrapper(value: string): string {
 
 /** Expanded rows retain detail formatting; commands stay in the separate body. */
 export function workEntryRowLabel(entry: WorkLogEntry, expanded = false): string {
+  const summary = summarizeTool(entry.toolData);
+  if (summary) return toolSummaryLabel(summary);
   if (entry.agentSpawn) return agentSpawnLabel(entry.agentSpawn);
   const presentation = resolveWorkEntryToolPresentation(entry);
   if (presentation) return presentation.displayName;

@@ -6,6 +6,20 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
 import { readToolOutput, retainedToolOutput, TOOL_OUTPUT_PAGE_SIZE } from "./toolOutputQuery.ts";
 
+it("makes every retained web result available beyond the bounded wire summary", () => {
+  const item = {
+    type: "webSearch",
+    results: Array.from({ length: 30 }, (_, i) => ({
+      title: `Result ${i}`,
+      url: `https://example.com/${i}`,
+    })),
+  };
+  assert.deepStrictEqual(
+    JSON.parse(retainedToolOutput({ itemType: "web_search", data: { item } })!),
+    item,
+  );
+});
+
 it("extracts output across provider shapes without returning tool inputs", () => {
   assert.strictEqual(
     retainedToolOutput({ data: { item: { aggregatedOutput: "first\nlast" } } }),

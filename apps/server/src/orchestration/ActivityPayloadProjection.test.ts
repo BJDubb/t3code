@@ -21,6 +21,59 @@ function activity(payload: Record<string, unknown>): OrchestrationThreadActivity
  * assertions are the tripwire.
  */
 describe("projectActivityPayload", () => {
+  it("keeps web titles and links on the wire without shipping full search output", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "web_search",
+        data: {
+          item: {
+            type: "webSearch",
+            action: { type: "openPage", url: "https://example.com" },
+            results: [
+              { title: "Readable page", url: "https://example.com", snippet: "x".repeat(10000) },
+            ],
+          },
+        },
+      }),
+    );
+    const data = (projected.payload as { data: Record<string, unknown> }).data;
+    expect(data.summary).toMatchObject({
+      kind: "web",
+      action: "openPage",
+      results: [{ title: "Readable page", url: "https://example.com/" }],
+    });
+    expect(JSON.stringify(data).length).toBeLessThan(1500);
+  });
+
+  it("preserves Passbolt stdout beyond the MCP output preview cutoff", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "mcp_tool_call",
+        data: {
+          item: {
+            server: "passbolt",
+            tool: "run_with_credentials",
+            result: {
+              content: [
+                {
+                  type: "text",
+                  text: JSON.stringify({
+                    credentials: [{ expected_name: "x".repeat(8000) }],
+                    outcome: "completed",
+                    exit_code: 0,
+                    stdout: "actual output",
+                  }),
+                },
+              ],
+            },
+          },
+        },
+      }),
+    );
+    const item = (projected.payload as { data: { item: Record<string, unknown> } }).data.item;
+    expect(item.summary).toMatchObject({ kind: "execution", stdout: "actual output", exitCode: 0 });
+    expect(JSON.stringify(item.result).length).toBeLessThan(4500);
+  });
   it("preserves tool attribution (agentId/parentToolUseId) through data slimming", () => {
     const projected = projectActivityPayload(
       activity({

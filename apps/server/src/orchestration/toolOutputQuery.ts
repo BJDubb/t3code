@@ -31,6 +31,9 @@ export function retainedToolOutput(payload: unknown): string | null {
   const root = object(payload);
   const data = object(root.data);
   const item = object(data.item);
+  if (root.itemType === "web_search" && Array.isArray(item.results)) {
+    return JSON.stringify(item, null, 2);
+  }
   if (root.itemType === "file_change" && Array.isArray(item.changes)) {
     const patches = item.changes.flatMap((value) => {
       const change = object(value);

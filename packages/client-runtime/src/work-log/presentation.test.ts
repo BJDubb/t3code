@@ -18,6 +18,17 @@ import {
 } from "./presentation.js";
 
 describe("workEntryIndicatesToolFailure", () => {
+  it("marks a completed MCP invocation as failed when its process failed", () => {
+    const entry = {
+      label: "Passbolt",
+      tone: "tool" as const,
+      itemType: "mcp_tool_call" as const,
+      toolLifecycleStatus: "completed",
+      toolData: { result: { exit_code: 2, stdout: "" } },
+    };
+    expect(workEntryDisplayIndicatesToolFailure(entry)).toBe(true);
+    expect(workEntryIndicatesToolSuccess(entry)).toBe(false);
+  });
   const base = {
     id: "w1",
     createdAt: "2026-01-01T00:00:00.000Z",

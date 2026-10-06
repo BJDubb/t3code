@@ -16,12 +16,10 @@ describe("tool summaries", () => {
     expect(summary).toMatchObject({
       kind: "web",
       resultCount: 2,
-      results: [
-        { title: "Page title", url: "https://example.com/" },
-        { title: "Bad link", url: undefined },
-      ],
+      results: [{ title: "Page title", url: "https://example.com/" }, { title: "Bad link" }],
     });
     expect(toolSummaryLabel(summary!)).toBe("Opened · Page title");
+    if (summary?.kind === "web") expect(summary.results[1]).not.toHaveProperty("url");
   });
   it("keeps execution status and output when credential metadata precedes it", () => {
     const summary = summarizeTool({

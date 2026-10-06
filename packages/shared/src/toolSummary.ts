@@ -4,6 +4,14 @@ function toolRecord(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
+/** Optional display fields must be absent, since wire JSON rejects undefined values. */
+function omitUndefined<T extends Record<string, unknown>>(value: T): T {
+  for (const key of Object.keys(value)) {
+    if (value[key] === undefined) delete value[key];
+  }
+  return value;
+}
+
 function string(value: unknown, limit = 4096): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim().slice(0, limit) : undefined;
 }
@@ -113,8 +121,8 @@ export function summarizeTool(
   ) {
     const results = Array.isArray(item.results) ? item.results : [];
     const queries = Array.isArray(action?.queries) ? action.queries : [action?.query ?? item.query];
-    return {
-      kind: "web",
+    return omitUndefined({
+      kind: "web" as const,
       action: string(action?.type) ?? "search",
       queries: queries.flatMap((q) => (string(q) ? [string(q)!] : [])).slice(0, 20),
       url: toolHttpUrl(action?.url),
@@ -127,17 +135,17 @@ export function summarizeTool(
         const title = string(r.title, 300) ?? url;
         return title
           ? [
-              {
+              omitUndefined({
                 id: string(r.ref_id) ?? `${url ?? title}:${index}`,
                 title,
                 url,
                 domain: string(r.domain, 300),
                 snippet: string(r.snippet, 600),
-              },
+              }),
             ]
           : [];
       }),
-    };
+    });
   }
   const name = `${item.server ?? ""} ${item.tool ?? item.toolName ?? ""}`.toLowerCase();
   const args = toolRecord(item.arguments ?? item.input) ?? {};
@@ -154,8 +162,8 @@ export function summarizeTool(
       result.timed_out === true ||
       (exitCode !== undefined && exitCode !== 0) ||
       ["failed", "error"].includes(String(result.outcome));
-    return {
-      kind: "execution",
+    return omitUndefined({
+      kind: "execution" as const,
       purpose: string(result.purpose ?? args.purpose),
       script: string(result.script ?? args.script)
         ?.replace(/\\/g, "/")
@@ -183,7 +191,7 @@ export function summarizeTool(
       truncated:
         (typeof result.stdout === "string" && result.stdout.length > 8192) ||
         (typeof result.stderr === "string" && result.stderr.length > 4096),
-    };
+    });
   }
   if (
     name.includes("passbolt") &&
@@ -196,21 +204,23 @@ export function summarizeTool(
       ),
     ]
       .slice(0, 20)
-      .map((m) => ({
-        name: string(m[1], 1000) ?? "Credential",
-        account: string(m[2], 300),
-        folder: string(m[3], 600),
-        id: m[4],
-      }));
+      .map((m) =>
+        omitUndefined({
+          name: string(m[1], 1000) ?? "Credential",
+          account: string(m[2], 300),
+          folder: string(m[3], 600),
+          id: m[4],
+        }),
+      );
     const count = /Found (\d+) matching credentials/.exec(decoded)?.[1];
     if (credentials.length || count === "0")
-      return {
-        kind: "credentials",
+      return omitUndefined({
+        kind: "credentials" as const,
         query: string(args.query),
         environment: string(args.environment),
         count: count ? Number(count) : credentials.length,
         credentials,
-      };
+      });
   }
   return undefined;
 }

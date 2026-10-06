@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
 import type { OrchestrationThreadActivity } from "@t3tools/contracts";
+import { Schema } from "effect";
 import { projectActivityPayload } from "./ActivityPayloadProjection.ts";
+
+const isJson = Schema.is(Schema.Json);
 
 function activity(payload: Record<string, unknown>): OrchestrationThreadActivity {
   return {
@@ -21,6 +24,49 @@ function activity(payload: Record<string, unknown>): OrchestrationThreadActivity
  * assertions are the tripwire.
  */
 describe("projectActivityPayload", () => {
+  it.each([
+    {
+      itemType: "web_search",
+      data: {
+        item: {
+          type: "webSearch",
+          action: { type: "search", query: "daylight saving", queries: null },
+        },
+      },
+    },
+    {
+      itemType: "web_search",
+      data: { item: { type: "webSearch", results: [{ title: "Page without optional metadata" }] } },
+    },
+    {
+      itemType: "mcp_tool_call",
+      data: {
+        item: {
+          server: "passbolt",
+          tool: "run_with_credentials",
+          result: { exit_code: 0, stdout: "done", stderr: "" },
+        },
+      },
+    },
+    {
+      itemType: "mcp_tool_call",
+      data: {
+        item: {
+          server: "passbolt",
+          tool: "search_credentials",
+          result:
+            "Found 1 matching credentials.\n\n1. Example\n   Account: \n   Folder: \n   ID: abc\n",
+        },
+      },
+    },
+  ])(
+    "keeps summaries with missing optional fields valid for HTTP JSON responses: %j",
+    (payload) => {
+      const projected = projectActivityPayload(activity(payload));
+      expect(isJson(projected.payload)).toBe(true);
+    },
+  );
+
   it("keeps web titles and links on the wire without shipping full search output", () => {
     const projected = projectActivityPayload(
       activity({

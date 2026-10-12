@@ -1,3 +1,9 @@
+import {
+  chatScrollRecorder,
+  traceNativeScrollCommands,
+  type ChatScrollEventKind,
+  type ChatScrollMetrics,
+} from "../diagnostics/chat-scroll-report";
 import { useOpenPullRequest } from "../../native/useOpenPullRequest";
 import { ThreadMarkdownVideo, ThreadMediaVisibleContext } from "./ThreadMarkdownVideo";
 import { useMarkdownImageSource } from "../../native/useMarkdownImageSource";
@@ -79,6 +85,7 @@ import {
   type RefObject,
 } from "react";
 import {
+  AppState,
   ActivityIndicator,
   Alert,
   Image,
@@ -167,7 +174,7 @@ import {
 } from "../../lib/markdownLinks";
 import {
   failedFeedRunIds,
-  deriveThreadFeedPresentation,
+  derivePersonalThreadFeedPresentation,
   threadFeedRunIsUnsettled,
   isContextCompactionActivityGroup,
   isContextHandoffActivityGroup,
@@ -178,6 +185,9 @@ import {
 import type { ThreadContentPresentation } from "./threadContentPresentation";
 import {
   resolveThreadFeedLiveFollow,
+  resolveThreadFeedSnapshot,
+  resolveThreadFeedReturnScroll,
+  type ThreadFeedReadingPosition,
   type ThreadFeedLiveFollowEvent,
   type ThreadWorkGroupScrollPosition,
 } from "./thread-feed-live-follow";
@@ -718,6 +728,7 @@ function MessageAttachmentUnknown(props: { readonly name: string }) {
 }
 
 // LegendList only computes hook visibility when the list has a viewability config.
+const threadReadingPositions = new Map<string, ThreadFeedReadingPosition>();
 const THREAD_MEDIA_VIEWABILITY_CONFIG = { itemVisiblePercentThreshold: 0 };
 
 function ThreadMediaVisibility(props: { readonly children: ReactNode }) {
@@ -1727,8 +1738,13 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   // which yanked users off history they were reading every time a stream chunk
   // grew a row. Follow breaks when the user scrolls up and away, and re-arms
   // only when the list actually returns to the end (or on send / thread switch).
-  const [endFollowEnabled, setEndFollowEnabled] = useState(true);
-  const endFollowEnabledRef = useRef(true);
+  const feedThreadKey = scopedThreadKey(props.environmentId, props.threadId);
+  const [initialReadingPosition] = useState(() => threadReadingPositions.get(feedThreadKey));
+  const pendingReadingRestoreRef = useRef(false);
+  const [endFollowEnabled, setEndFollowEnabled] = useState(
+    initialReadingPosition?.followEnd ?? true,
+  );
+  const endFollowEnabledRef = useRef(initialReadingPosition?.followEnd ?? true);
   // A "user scroll session" spans from drag start through the end of its
   // momentum; scroll events only break follow inside that session, so MVCP
   // compensations and programmatic scrolls never strand a follower.
@@ -2074,6 +2090,22 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     },
     [props.onHeaderMaterialVisibilityChange],
   );
+  const recordScroll = useCallback(
+    (kind: ChatScrollEventKind, extra: ChatScrollMetrics = {}) => {
+      const state = props.listRef.current?.getState();
+      chatScrollRecorder.record(kind, {
+        offset: state?.scroll,
+        contentHeight: state?.contentLength,
+        viewportHeight: state?.scrollLength,
+        firstIndex: state?.start,
+        rowCount: state?.data.length,
+        following: endFollowEnabledRef.current,
+        pendingRestore: pendingReadingRestoreRef.current,
+        ...extra,
+      });
+    },
+    [props.listRef],
+  );
   const handleScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       // anchorTopInset, not topContentInset: under automatic insets the list
@@ -2081,6 +2113,26 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       // UIKit's adjustedContentInset, so topContentInset is 0 here). Add the
       // header height back or the material toggles a full header too late.
       reportHeaderMaterialVisibility(event.nativeEvent.contentOffset.y + anchorTopInset > 6);
+      recordScroll("scroll", {
+        nativeOffset: event.nativeEvent.contentOffset.y,
+        contentHeight: event.nativeEvent.contentSize.height,
+        viewportHeight: event.nativeEvent.layoutMeasurement.height,
+        insetTop: event.nativeEvent.contentInset.top,
+        insetBottom: event.nativeEvent.contentInset.bottom,
+      });
+      const reading = props.listRef.current?.getState();
+      const row = reading?.data[reading.start];
+      if (reading && row && !pendingReadingRestoreRef.current) {
+        threadReadingPositions.delete(feedThreadKey);
+        threadReadingPositions.set(feedThreadKey, {
+          rowId: row.id,
+          offsetWithinRow: reading.scroll - reading.positionAtIndex(reading.start),
+          followEnd: endFollowEnabledRef.current,
+        });
+        if (threadReadingPositions.size > 20)
+          threadReadingPositions.delete(threadReadingPositions.keys().next().value!);
+      }
+
       // LegendList recomputes its inset-aware end distance before invoking
       // this handler, so getState() is current. Only the actual end re-arms
       // follow: its broader maintain-scroll threshold is large enough for a
@@ -2096,7 +2148,14 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
         });
       }
     },
-    [reportHeaderMaterialVisibility, anchorTopInset, props.listRef, transitionEndFollow],
+    [
+      reportHeaderMaterialVisibility,
+      anchorTopInset,
+      props.listRef,
+      transitionEndFollow,
+      recordScroll,
+      feedThreadKey,
+    ],
   );
   const clearUserScrollSettle = useCallback(() => {
     if (userScrollSettleTimerRef.current !== null) {
@@ -2105,12 +2164,14 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     }
   }, []);
   const handleScrollBeginDrag = useCallback(() => {
+    pendingReadingRestoreRef.current = false;
+    recordScroll("drag-start");
     clearUserScrollSettle();
     userScrollSessionRef.current = true;
     // Pause before the first scroll event. Otherwise a stream update can run
     // maintainScrollAtEnd between touch-down and the drag leaving its threshold.
     transitionEndFollow({ type: "user-scroll-begin" });
-  }, [clearUserScrollSettle, transitionEndFollow]);
+  }, [clearUserScrollSettle, transitionEndFollow, recordScroll]);
   const finishUserScroll = useCallback(
     (releaseIsAtEnd?: boolean) => {
       clearUserScrollSettle();
@@ -2143,15 +2204,16 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     }
   }, [clearUserScrollSettle]);
   const handleMomentumScrollEnd = useCallback(() => {
+    recordScroll("momentum-end");
     finishUserScroll();
-  }, [finishUserScroll]);
+  }, [finishUserScroll, recordScroll]);
 
   useEffect(() => clearUserScrollSettle, [clearUserScrollSettle]);
 
   // Thread identity is env-scoped: two environments can hold the same
   // ThreadId, and keying resets (or the list mount) on the bare id would
   // carry stale scroll/follow state across an environment switch.
-  const feedThreadKey = scopedThreadKey(props.environmentId, props.threadId);
+
   // Virtualized groups can unmount without losing the reader's place. This cache
   // belongs to this thread view only and never causes per-scroll React updates.
   const workGroupScrollPositions = useMemo(
@@ -2185,21 +2247,52 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     reportHeaderMaterialVisibility(false);
   }, [feedThreadKey, reportHeaderMaterialVisibility]);
 
+  const [feedSnapshot, setFeedSnapshot] = useState({ threadKey: feedThreadKey, feed: props.feed });
+  const snapshot = resolveThreadFeedSnapshot(
+    feedSnapshot,
+    feedThreadKey,
+    props.feed,
+    props.contentPresentation.kind === "loading" ||
+      (props.contentPresentation.kind === "unavailable" &&
+        props.contentPresentation.title !== "Thread unavailable"),
+  );
+  if (snapshot !== feedSnapshot) setFeedSnapshot(snapshot);
+  const sourceFeed = snapshot.feed;
+  const restoreReadingPosition = useCallback(() => {
+    const saved = threadReadingPositions.get(feedThreadKey);
+    if (!saved || saved.followEnd) return;
+    const target = resolveThreadFeedReturnScroll(
+      props.listRef.current?.getState().data ?? [],
+      saved,
+    );
+    pendingReadingRestoreRef.current = !target;
+    if (target) {
+      recordScroll("restore", { targetIndex: target.index });
+      setEndFollow(false);
+      void props.listRef.current?.scrollToIndex({ ...target, animated: false });
+    }
+  }, [feedThreadKey, props.listRef, recordScroll, setEndFollow]);
+  useFocusEffect(
+    useCallback(() => {
+      const frame = requestAnimationFrame(restoreReadingPosition);
+      return () => cancelAnimationFrame(frame);
+    }, [restoreReadingPosition]),
+  );
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (phase) => {
+      recordScroll("lifecycle", { phase });
+      if (phase === "active") restoreReadingPosition();
+    });
+    return () => subscription.remove();
+  }, [recordScroll, restoreReadingPosition]);
+  useLayoutEffect(() => {
+    if (pendingReadingRestoreRef.current) restoreReadingPosition();
+  }, [sourceFeed, restoreReadingPosition]);
+
   const presentedFeed = useMemo(
     () =>
       appendPendingThreadMessages(
-        deriveThreadFeedPresentation(
-          props.feed,
-          props.latestRun,
-          expandedTurnIds,
-          new Set(
-            Object.entries(expandedWorkGroups)
-              .filter(([, expanded]) => expanded)
-              .map(([groupId]) => groupId),
-          ),
-          props.activeWorkStartedAt,
-          props.runlessWorkActive ?? false,
-        ),
+        derivePersonalThreadFeedPresentation(sourceFeed),
         props.feed,
         props.queuedMessages,
       ),
@@ -2209,7 +2302,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       expandedWorkGroups,
       props.activeWorkStartedAt,
       props.runlessWorkActive,
-      props.feed,
+      sourceFeed,
       props.latestRun,
     ],
   );
@@ -2223,7 +2316,38 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   // The thinking row a running thread shows while its messages load is not
   // content: the list must still remount, and so open at the end, when they
   // arrive.
-  const listMountKey = `${feedThreadKey}:${presentedFeed.some((entry) => entry.type !== "thinking") ? "filled" : "empty"}`;
+  const hasContent = presentedFeed.some((entry) => entry.type !== "thinking");
+  const [loadedContent, setLoadedContent] = useState({ key: feedThreadKey, loaded: hasContent });
+  if (loadedContent.key !== feedThreadKey || (!loadedContent.loaded && hasContent))
+    setLoadedContent({ key: feedThreadKey, loaded: hasContent });
+  const listMountKey = `${feedThreadKey}:${hasContent || (loadedContent.key === feedThreadKey && loadedContent.loaded) ? "filled" : "empty"}`;
+  useLayoutEffect(() => {
+    recordScroll("mount");
+    const list = props.listRef.current;
+    const view = list?.getNativeScrollRef();
+    const stop = view
+      ? traceNativeScrollCommands(view, (metrics) => recordScroll("command", metrics))
+      : undefined;
+    const state = list?.getState();
+    const signals = [
+      "scrollAdjust",
+      "scrollAdjustPending",
+      "scrollAdjustUserOffset",
+      "totalSize",
+    ] as const;
+    const listen = state?.listen as
+      | ((signal: (typeof signals)[number], callback: (value: number) => void) => () => void)
+      | undefined;
+    const subscriptions = listen
+      ? signals.map((source) =>
+          listen(source, (adjustment) => recordScroll("adjust", { source, adjustment })),
+        )
+      : [];
+    return () => {
+      stop?.();
+      for (const unsubscribe of subscriptions) unsubscribe();
+    };
+  }, [listMountKey, props.listRef, recordScroll]);
   useLayoutEffect(() => {
     const bottom = props.contentInsetEndAdjustment.value;
     if (bottom > 0) {
@@ -2733,7 +2857,12 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
             // composer instead of under the header. No effect on threads that
             // overflow the viewport (the padding clamps to zero).
             alignItemsAtEnd
-            initialScrollAtEnd
+            initialScrollAtEnd={initialReadingPosition?.followEnd ?? true}
+            initialScrollIndex={resolveThreadFeedReturnScroll(
+              presentedFeed,
+              initialReadingPosition,
+            )}
+            onScrollToTop={() => recordScroll("native-top")}
             onScroll={handleScroll}
             onScrollBeginDrag={handleScrollBeginDrag}
             onScrollEndDrag={handleScrollEndDrag}

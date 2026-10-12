@@ -116,6 +116,7 @@ export function summarizeTool(
   if (
     web ||
     item.type === "webSearch" ||
+    item.type === "web_search" ||
     action?.type === "openPage" ||
     action?.type === "findInPage"
   ) {

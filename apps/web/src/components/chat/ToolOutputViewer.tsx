@@ -1,6 +1,6 @@
 import { ToolTextBlock } from "./ToolTextBlock";
 import { writeTextToClipboard } from "../../hooks/useCopyToClipboard";
-import { plainToolOutput } from "./toolCommandPresentation";
+import { plainToolOutput } from "@t3tools/client-runtime/work-log/tool-command-presentation";
 import { useAtomValue } from "@effect/atom-react";
 import { EventId, type ScopedThreadRef } from "@t3tools/contracts";
 import { useState } from "react";

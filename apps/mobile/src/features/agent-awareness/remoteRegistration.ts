@@ -55,6 +55,8 @@ const AgentAwarenessOperation = Schema.Literals([
   "read-live-activity-push-token",
   "load-live-activity-registration-identifier",
   "list-active-live-activities",
+  "list-foreground-live-activities",
+  "refresh-foreground-live-activity",
   "load-live-activity-prime-preferences",
   "prime-live-activity",
 ]);
@@ -91,6 +93,8 @@ const liveActivityStaleDate = () => new Date(Date.now() + LIVE_ACTIVITY_STALE_AF
 const registeredActivityPushTokens = new Map<string, number>();
 let androidDeviceReplayedAt: number | null = null;
 let pushTokenSubscription: { remove: () => void } | null = null;
+let foregroundActivityRefresh: ReturnType<typeof setInterval> | null = null;
+let foregroundActivityRefreshPending = false;
 let appStateSubscription: { remove: () => void } | null = null;
 
 // Whether the relay has actually accepted this device's registration. The
@@ -202,6 +206,7 @@ export function setAgentAwarenessRelayTokenProvider(
     pushTokenSubscription = null;
     appStateSubscription?.remove();
     appStateSubscription = null;
+    stopForegroundActivityRefresh();
     if (activeLiveActivityRegistrationRetry) {
       clearTimeout(activeLiveActivityRegistrationRetry);
       activeLiveActivityRegistrationRetry = null;
@@ -251,6 +256,7 @@ export function releaseAgentAwarenessRelayTokenProvider(): void {
   pushTokenSubscription = null;
   appStateSubscription?.remove();
   appStateSubscription = null;
+  stopForegroundActivityRefresh();
   if (activeLiveActivityRegistrationRetry) {
     clearTimeout(activeLiveActivityRegistrationRetry);
     activeLiveActivityRegistrationRetry = null;
@@ -832,15 +838,84 @@ function ensurePushTokenListener(): void {
 // never arrived. (Deduped by ACTIVITY_TOKEN_REREGISTER_INTERVAL_MS: rapid
 // foreground/sign-in bursts collapse to one registration, but returning after
 // real time away still replays.)
+function stopForegroundActivityRefresh(): void {
+  if (foregroundActivityRefresh) clearInterval(foregroundActivityRefresh);
+  foregroundActivityRefresh = null;
+}
+
+/** Refresh an existing card locally, even if its APNs update could not arrive. */
+export function refreshForegroundAgentLiveActivities(): Effect.Effect<
+  void,
+  never,
+  ManagedRelay.ManagedRelayClient
+> {
+  let ownsRefresh = false;
+  return Effect.gen(function* () {
+    if (
+      !canRegisterRemoteLiveActivities() ||
+      !relayTokenProvider ||
+      foregroundActivityRefreshPending
+    )
+      return;
+    const activities = yield* Effect.try({
+      try: () => getAgentLiveActivities(),
+      catch: (cause) =>
+        new AgentAwarenessOperationError({ operation: "list-foreground-live-activities", cause }),
+    });
+    if (activities.length === 0) return;
+    foregroundActivityRefreshPending = true;
+    ownsRefresh = true;
+    const generation = deviceRegistrationGeneration;
+    const snapshot = yield* readAgentActivitySnapshot();
+    if (!snapshot || generation !== deviceRegistrationGeneration || !relayTokenProvider) return;
+    yield* Effect.forEach(activities, (activity) =>
+      Effect.tryPromise({
+        try: () =>
+          snapshot.aggregate
+            ? activity.update(snapshot.aggregate, liveActivityStaleDate())
+            : activity.end("immediate"),
+        catch: (cause) =>
+          new AgentAwarenessOperationError({
+            operation: "refresh-foreground-live-activity",
+            cause,
+          }),
+      }),
+    );
+  }).pipe(
+    Effect.catch((error) =>
+      Effect.sync(() => logRegistrationError("foreground live activity refresh failed", error)),
+    ),
+    Effect.ensuring(
+      Effect.sync(() => {
+        if (ownsRefresh) foregroundActivityRefreshPending = false;
+      }),
+    ),
+  );
+}
+
 function ensureAppStateListener(): void {
   if (appStateSubscription || !canRegisterPushNotifications()) {
     return;
   }
 
+  if (canRegisterRemoteLiveActivities()) {
+    foregroundActivityRefresh = setInterval(() => {
+      if (AppState.currentState === "active") {
+        runRegistrationInBackground(
+          refreshForegroundAgentLiveActivities(),
+          "foreground live activity refresh failed",
+        );
+      }
+    }, 60_000);
+  }
   appStateSubscription = AppState.addEventListener("change", (state) => {
     if (state !== "active") {
       return;
     }
+    runRegistrationInBackground(
+      refreshForegroundAgentLiveActivities(),
+      "foreground live activity refresh failed",
+    );
     enqueueDeviceRegistration({}, "device registration after app foreground failed");
     runRegistrationInBackground(
       refreshActiveLiveActivityRemoteRegistration(),
@@ -927,6 +1002,7 @@ export function __resetAgentAwarenessRemoteRegistrationForTest(): void {
   pushTokenSubscription = null;
   appStateSubscription?.remove();
   appStateSubscription = null;
+  stopForegroundActivityRefresh();
   if (activeLiveActivityRegistrationRetry) {
     clearTimeout(activeLiveActivityRegistrationRetry);
     activeLiveActivityRegistrationRetry = null;

@@ -1381,6 +1381,7 @@ function deriveTimelineTurnFolds(
 }
 
 export function deriveMessagesTimelineRows(input: {
+  readonly ungroupToolCalls?: boolean;
   timelineEntries: ReadonlyArray<TimelineEntry>;
   latestRun?: TimelineLatestRun | null;
   runningRunId?: RunId | null;
@@ -1429,11 +1430,15 @@ export function deriveMessagesTimelineRows(input: {
     liveSubagentEntryIds,
     completeSupersededReplyIds,
   );
-  const activeVisualResponseRunIds = deriveActiveVisualResponseRunIds({
-    timelineEntries: timelineEntries,
-    unsettledRunId,
-    isWorking: input.isWorking,
-  });
+  const activeVisualResponseRunIds = new Set(
+    deriveActiveVisualResponseRunIds({
+      timelineEntries: timelineEntries,
+      unsettledRunId,
+      isWorking: input.isWorking,
+    }),
+  );
+  if (input.ungroupToolCalls && input.isWorking && unsettledRunId !== null)
+    activeVisualResponseRunIds.add(unsettledRunId);
   const runlessWorkActive = input.isWorking && input.runlessWorkActive === true;
   const foldsByAnchorEntryId = deriveTurnFolds({
     timelineEntries: timelineEntries,
@@ -1478,7 +1483,11 @@ export function deriveMessagesTimelineRows(input: {
   // and once everything settles it keeps the latest tool in past tense
   // instead of vanishing (#8984).
   const activeToolEntries: Array<Extract<TimelineEntry, { kind: "work" }>> = [];
-  if (false && input.isWorking && (unsettledRunId !== null || runlessWorkActive)) {
+  if (
+    !input.ungroupToolCalls &&
+    input.isWorking &&
+    (unsettledRunId !== null || runlessWorkActive)
+  ) {
     let tailAttemptId: string | null | undefined;
     for (let index = timelineEntries.length - 1; index >= activeTurnHeaderIndex; index -= 1) {
       const entry = timelineEntries[index]!;
@@ -1648,8 +1657,160 @@ export function deriveMessagesTimelineRows(input: {
       continue;
     }
 
+    if (timelineEntry.kind === "work" && input.ungroupToolCalls) {
+      nextRows.push({
+        kind: "work",
+        id: timelineEntry.id,
+        createdAt: timelineEntry.createdAt,
+        groupedEntries: [timelineEntry.entry],
+        isExpandedToolGroup: false,
+      });
+      continue;
+    }
     if (timelineEntry.kind === "work") {
-      nextRows.push({kind: "work", id: timelineEntry.id, createdAt: timelineEntry.createdAt, groupedEntries: [timelineEntry.entry], isExpandedToolGroup: false});
+      if (
+        (timelineEntry.entry.runId != null && failedRunIds.has(timelineEntry.entry.runId)) ||
+        (timelineEntry.entry.itemType === "error" &&
+          timelineEntry.entry.toolLifecycleStatus === "failed") ||
+        timelineEntry.entry.tone === "error" ||
+        timelineEntry.entry.sourceActivityKind === "runtime.error" ||
+        timelineEntry.entry.itemType === "system_notice" ||
+        timelineEntry.entry.itemType === "notification"
+      ) {
+        nextRows.push({
+          kind: "work",
+          id: timelineEntry.id,
+          createdAt: timelineEntry.createdAt,
+          groupedEntries: [timelineEntry.entry],
+          isExpandedToolGroup: false,
+        });
+        continue;
+      }
+      const groupedEntries = [timelineEntry.entry];
+      let cursor = index + 1;
+      while (cursor < timelineEntries.length) {
+        const nextEntry = timelineEntries[cursor];
+        if (
+          !nextEntry ||
+          nextEntry.kind !== "work" ||
+          nextEntry.entry.sourceActivityKind === "context-compaction" ||
+          nextEntry.entry.tone === "error" ||
+          nextEntry.entry.sourceActivityKind === "runtime.error" ||
+          nextEntry.entry.itemType === "system_notice" ||
+          nextEntry.entry.itemType === "notification" ||
+          activeWorkEntryIds.has(nextEntry.id) ||
+          collapsedEntryIds.has(nextEntry.id) ||
+          collapsedSupersededEntryIds.has(nextEntry.id) ||
+          foldsByAnchorEntryId.has(nextEntry.id) ||
+          supersededFoldsByAnchorEntryId.has(nextEntry.id) ||
+          (nextEntry.entry.runId ?? null) !== (timelineEntry.entry.runId ?? null) ||
+          nextEntry.attempt?.id !== timelineEntry.attempt?.id
+        ) {
+          break;
+        }
+        groupedEntries.push(nextEntry.entry);
+        cursor += 1;
+      }
+      const visibleGroupedEntries = groupedEntries.filter((entry) =>
+        workEntryIsVisibleInGroup(entry, workEntryIsInActiveRun(entry)),
+      );
+      if (visibleGroupedEntries.length > 0) {
+        const activeInProgressToolEntries = visibleGroupedEntries.filter(workEntryIsInActiveRun);
+        if (activeInProgressToolEntries.length > 0) {
+          const groupId = workGroupId(timelineEntry.id);
+          const expanded = input.expandedWorkGroupIds?.has(groupId) ?? false;
+          const latestActiveToolEntry = activeInProgressToolEntries.at(-1)!;
+          nextRows.push({
+            kind: "work-live",
+            id: `work-live:${timelineEntry.id}`,
+            createdAt: timelineEntry.createdAt,
+            entry: latestActiveToolEntry,
+            groupedEntries: visibleGroupedEntries,
+            groupId,
+            expanded,
+            active: true,
+          });
+          hasActivityRow = true;
+          if (expanded) {
+            nextRows.push(
+              expandedWorkGroupRow(groupId, timelineEntry.createdAt, visibleGroupedEntries),
+            );
+          }
+        } else if (
+          visibleGroupedEntries.length === 1 &&
+          workLogEntryIsToolLike(visibleGroupedEntries[0]!)
+        ) {
+          const singleEntry = visibleGroupedEntries[0]!;
+          nextRows.push({
+            kind: "work",
+            id: timelineEntry.id,
+            createdAt: timelineEntry.createdAt,
+            groupedEntries: visibleGroupedEntries,
+            isExpandedToolGroup: false,
+            displayLabel:
+              toolGroupAction(singleEntry) === "edit"
+                ? summarizeToolGroup(visibleGroupedEntries).summary
+                : singleToolCallLabel(singleEntry),
+          });
+        } else {
+          const groupId = workGroupId(timelineEntry.id);
+          const expanded = input.expandedWorkGroupIds?.has(groupId) ?? false;
+          const summaryKind = toolGroupSummaryKind(visibleGroupedEntries);
+          const primarySourceEntry = visibleGroupedEntries.find(
+            (entry) => entry.toolSource !== undefined,
+          );
+          const primarySourceKey = primarySourceEntry?.toolSource?.key;
+          const primarySourceIcon = primarySourceKey
+            ? (visibleGroupedEntries.find(
+                (entry) =>
+                  entry.toolSource?.key === primarySourceKey && entry.toolIcon !== undefined,
+              )?.toolIcon ?? primarySourceEntry?.toolSource?.icon)
+            : undefined;
+          const groupToolSurface =
+            primarySourceEntry?.toolSurface ??
+            visibleGroupedEntries.findLast((entry) => entry.toolSurface !== undefined)?.toolSurface;
+          const groupToolIcon =
+            primarySourceIcon ??
+            visibleGroupedEntries.findLast((entry) => entry.toolIcon !== undefined)?.toolIcon;
+          const latestToolEntry = visibleGroupedEntries.findLast(workLogEntryIsToolLike);
+          const singleEntry =
+            visibleGroupedEntries.length === 1 ? (visibleGroupedEntries[0] ?? null) : null;
+          const usesSingleToolCallLabel =
+            singleEntry !== null &&
+            workLogEntryIsToolLike(singleEntry) &&
+            toolGroupAction(singleEntry) !== "edit";
+          const summaryToolIcon = usesSingleToolCallLabel
+            ? resolveWorkEntryToolPresentation(singleEntry, "completed")?.icon
+            : undefined;
+          nextRows.push({
+            kind: "work-toggle",
+            id: `work-toggle:${timelineEntry.id}`,
+            createdAt: timelineEntry.createdAt,
+            runId: timelineEntry.entry.runId ?? null,
+            groupId,
+            hiddenCount: visibleGroupedEntries.length,
+            expanded,
+            summary: usesSingleToolCallLabel
+              ? singleToolCallLabel(singleEntry)
+              : singleEntry !== null && !workLogEntryIsToolLike(singleEntry)
+                ? singleEntry.label
+                : summarizeToolGroup(visibleGroupedEntries).summary,
+            summaryKind,
+            ...(groupToolSurface ? { toolSurface: groupToolSurface } : {}),
+            ...(groupToolIcon ? { toolIcon: groupToolIcon } : {}),
+            ...(summaryToolIcon ? { summaryToolIcon } : {}),
+            hasFailure:
+              latestToolEntry !== undefined &&
+              workEntryDisplayIndicatesToolFailure(latestToolEntry),
+          });
+          if (expanded) {
+            nextRows.push(
+              expandedWorkGroupRow(groupId, timelineEntry.createdAt, visibleGroupedEntries),
+            );
+          }
+        }
+      }
+      index = cursor - 1;
       continue;
     }
 
@@ -1851,9 +2012,9 @@ export function deriveMessagesTimelineRows(input: {
     }
   }
 
-  const result = attachTrailingToolGroupsToAssistant(
-    attachCreatedThreadSummaries(nextRows, timelineEntries),
-  );
+  const result = input.ungroupToolCalls
+    ? attachCreatedThreadSummaries(nextRows, timelineEntries)
+    : attachTrailingToolGroupsToAssistant(attachCreatedThreadSummaries(nextRows, timelineEntries));
   return result.map((row, index) =>
     timelineRowIsWorkLog(row) && timelineRowIsWorkLog(result[index + 1])
       ? { ...row, continuesWorkLog: true }

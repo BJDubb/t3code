@@ -8,6 +8,10 @@ Set-Location (Split-Path $PSScriptRoot -Parent)
 if (!(Test-Path 'apps/server/package.json')) { throw 'Run from the T3 Code checkout.' }
 if (!$Version) {
   $baseVersion = (Get-Content 'apps/server/package.json' -Raw | ConvertFrom-Json).version -replace '-.*$', ''
+  # Nightly source keeps the stable package version; use the adopted release's base.
+  $adoptedNightly = & git describe --tags --abbrev=0 --match 'v*-nightly.*' HEAD 2>$null
+  if ($adoptedNightly -match '^v(\d+\.\d+\.\d+)-nightly\.') { $baseVersion = $Matches[1] }
+
   $Version = "$baseVersion-preview.$(Get-Date -Format yyyyMMdd).$(Get-Date -Format HHmmss)"
 }
 if ($Version -notmatch '^\d+\.\d+\.\d+-preview\.\d{8}\.\d+$') {

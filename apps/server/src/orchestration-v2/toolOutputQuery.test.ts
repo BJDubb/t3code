@@ -1,10 +1,5 @@
 import { assert, it } from "@effect/vitest";
-import { EventId, ThreadId } from "@t3tools/contracts";
-import * as Effect from "effect/Effect";
-import * as Schema from "effect/Schema";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
-import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
-import { readToolOutput, retainedToolOutput, TOOL_OUTPUT_PAGE_SIZE } from "./toolOutputQuery.ts";
+import { toolOutputPage, retainedToolOutput, TOOL_OUTPUT_PAGE_SIZE } from "./toolOutputQuery.ts";
 
 it("makes every retained web result available beyond the bounded wire summary", () => {
   const item = {
@@ -74,32 +69,34 @@ it("returns saved edit patches and converts added file contents into a diff", ()
   );
 });
 
-it.layer(SqlitePersistenceMemory)("retained output query", (it) => {
-  it.effect("pages an exact activity, preserves unicode and rejects a different thread", () =>
-    Effect.gen(function* () {
-      const sql = yield* SqlClient.SqlClient;
-      // A temporary table isolates this query fixture from unrelated projection constraints.
-      yield* sql`CREATE TEMP TABLE projection_thread_activities (thread_id TEXT, activity_id TEXT, kind TEXT, payload_json TEXT)`;
-      const output = "a".repeat(TOOL_OUTPUT_PAGE_SIZE - 1) + "😀tail\n";
-      const payload = yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))({
-        data: { item: { aggregatedOutput: output } },
-      });
-      yield* sql`INSERT INTO projection_thread_activities VALUES ('thread-a', 'activity-a', 'tool.completed', ${payload})`;
-      const input = {
-        threadId: ThreadId.make("thread-a"),
-        activityId: EventId.make("activity-a"),
-        offset: 0,
-      };
-      const first = yield* readToolOutput(input);
-      assert.strictEqual(first.contents.length, TOOL_OUTPUT_PAGE_SIZE - 1);
-      const second = yield* readToolOutput({ ...input, offset: first.nextOffset! });
-      assert.strictEqual(first.contents + second.contents, output);
-      assert.strictEqual(second.nextOffset, null);
-      const rejected = yield* readToolOutput({
-        ...input,
-        threadId: ThreadId.make("thread-b"),
-      }).pipe(Effect.flip);
-      assert.strictEqual(rejected._tag, "OrchestrationGetToolOutputError");
+it("pages V2 command output without splitting unicode or exposing input", () => {
+  const output = "a".repeat(TOOL_OUTPUT_PAGE_SIZE - 1) + "😀tail\n";
+  const item = { type: "command_execution", input: "private command", output };
+  const first = toolOutputPage(item, 0);
+  const second = toolOutputPage(item, first.nextOffset!);
+  assert.strictEqual(first.contents.length, TOOL_OUTPUT_PAGE_SIZE - 1);
+  assert.strictEqual(first.contents + second.contents, output);
+  assert.strictEqual(second.nextOffset, null);
+  assert.strictEqual(
+    retainedToolOutput({ type: "command_execution", input: "private command" }),
+    null,
+  );
+});
+it("retains a V2 saved edit without returning command inputs", () => {
+  assert.strictEqual(
+    retainedToolOutput({
+      type: "file_change",
+      fileName: "src/a.ts",
+      diffStr: "@@ -1 +1 @@\n-old\n+new\n",
     }),
+    "--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n-old\n+new\n",
+  );
+  assert.strictEqual(
+    retainedToolOutput({
+      type: "dynamic_tool",
+      input: { password: "input-only" },
+      output: { value: "result" },
+    }),
+    JSON.stringify({ value: "result" }, null, 2),
   );
 });

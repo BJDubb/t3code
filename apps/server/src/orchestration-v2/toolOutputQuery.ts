@@ -23,9 +23,20 @@ export function retainedToolOutput(payload: unknown): string | null {
   const root = object(payload);
   // V2 stores typed turn items instead of the V1 activity envelope.
   if (root.type === "command_execution") return text(root.output) ?? null;
-  if (root.type === "dynamic_tool") return text(root.output) ?? (root.output === undefined ? null : JSON.stringify(root.output, null, 2));
-  if (root.type === "file_change" && typeof root.patch === "string") return root.patch;
-  if (root.type === "web_search" && root.results !== undefined) return JSON.stringify(root.results, null, 2);
+  if (root.type === "dynamic_tool")
+    return (
+      text(root.output) ?? (root.output === undefined ? null : JSON.stringify(root.output, null, 2))
+    );
+  if (root.type === "file_change" && typeof root.diffStr === "string") {
+    if (/^(?:diff --git|--- )/m.test(root.diffStr)) return root.diffStr;
+    if (typeof root.fileName === "string") {
+      const path = root.fileName.replace(/\\/g, "/");
+      return `--- a/${path}\n+++ b/${path}\n${root.diffStr}`;
+    }
+    return root.diffStr;
+  }
+  if (root.type === "web_search" && root.results !== undefined)
+    return JSON.stringify(root.results, null, 2);
   const data = object(root.data);
   const item = object(data.item);
   if (root.itemType === "web_search" && Array.isArray(item.results)) {
@@ -70,8 +81,13 @@ export function retainedToolOutput(payload: unknown): string | null {
 
 export const TOOL_OUTPUT_PAGE_SIZE = 64 * 1024;
 export function toolOutputPage(payload: unknown, offset: number) {
- const output = retainedToolOutput(payload);
- let end = Math.min(offset + TOOL_OUTPUT_PAGE_SIZE, output?.length ?? 0);
- if (output && end < output.length && /[\uD800-\uDBFF]/.test(output[end - 1] ?? "")) end--;
- return {available: output !== null, contents: output?.slice(offset,end) ?? "", totalChars: output?.length ?? 0, nextOffset: output && end < output.length ? end : null};
+  const output = retainedToolOutput(payload);
+  let end = Math.min(offset + TOOL_OUTPUT_PAGE_SIZE, output?.length ?? 0);
+  if (output && end < output.length && /[\uD800-\uDBFF]/.test(output[end - 1] ?? "")) end--;
+  return {
+    available: output !== null,
+    contents: output?.slice(offset, end) ?? "",
+    totalChars: output?.length ?? 0,
+    nextOffset: output && end < output.length ? end : null,
+  };
 }

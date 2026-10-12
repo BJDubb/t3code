@@ -1,5 +1,6 @@
-import { ToolDetailsPanel, SavedEditPanel } from "./ToolDetailsPanel";
-import { toolCommandPresentation } from "./toolCommandPresentation";
+import { ToolCommandPanel } from "./ToolCommandPanel";
+import { RetainedToolDetailsPanel, SavedEditPanel } from "./ToolDetailsPanel";
+import { toolCommandPresentation } from "@t3tools/client-runtime/work-log/tool-command-presentation";
 import { summarizeTool, toolSummaryLabel } from "@t3tools/shared/toolSummary";
 import { ThreadFindTimelineContext } from "./ThreadFindProvider";
 import { shouldPreserveAssistantLineBreaks } from "@t3tools/shared/markdownPipeline";
@@ -917,6 +918,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
       {
         timelineEntries,
         latestRun,
+        ungroupToolCalls: true,
         runningRunId,
         expandedRunIds: visibleExpandedRunIds,
         expandedAttemptIds: visibleExpandedAttemptIds,
@@ -3530,7 +3532,12 @@ const WorkGroupSection = memo(function WorkGroupSection({
     [disclosureAnchorKey, onToggleWorkEntry],
   );
   const nonEmptyEntries = useMemo(
-    () => groupedEntries.filter((entry) => workEntryIsVisibleInGroup(entry, isExpandedToolGroup)),
+    () =>
+      groupedEntries.filter(
+        (entry) =>
+          entry.toolLifecycleStatus === "inProgress" ||
+          workEntryIsVisibleInGroup(entry, isExpandedToolGroup),
+      ),
     [groupedEntries, isExpandedToolGroup],
   );
 
@@ -5495,7 +5502,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
       : undefined;
   const groupView = use(WorkGroupViewCtx);
   const [expanded, setExpanded] = useState(
-    () => groupView?.state.expandedEntries.has(workEntry.id) ?? false,
+    () => groupView?.state.expandedEntries.has(workEntry.id) ?? workEntry.itemType === "reasoning",
   );
   const toggleExpanded = () => {
     const next = !expanded;
@@ -5594,9 +5601,16 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
       ? workEntry.toolLifecycleStatus === "inProgress"
         ? "Thinking"
         : "Thought"
-      : questionHeading || (workEntry.command
-        ? toolCommandPresentation(workEntry.rawCommand ?? workEntry.command, workEntry.toolTitle, displayLabel).label
-        : (summarizeTool(workEntry.toolData) ? toolSummaryLabel(summarizeTool(workEntry.toolData)!) : (displayLabel ?? workEntryDisplayLabel(workEntry, workspaceRoot))));
+      : questionHeading ||
+        (workEntry.command
+          ? toolCommandPresentation(
+              workEntry.rawCommand ?? workEntry.command,
+              workEntry.toolTitle,
+              displayLabel,
+            ).label
+          : summarizeTool(workEntry.toolData)
+            ? toolSummaryLabel(summarizeTool(workEntry.toolData)!)
+            : (displayLabel ?? workEntryDisplayLabel(workEntry, workspaceRoot)));
   const answerPreview =
     workEntry.questionAnswer && hasQuestionAnswer(workEntry.questionAnswer)
       ? getQuestionAnswerPreview(workEntry.questionAnswer)
@@ -5771,6 +5785,24 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
       }
       trailing={
         <>
+          {workLogEntryIsToolLike(workEntry) && !isReasoning && workEntry.toolLifecycleStatus ? (
+            <span
+              className={cn(
+                "shrink-0 text-2xs",
+                showFailedIndicator ? "text-destructive" : "text-muted-foreground",
+              )}
+            >
+              {workEntry.toolLifecycleStatus === "inProgress"
+                ? "Running"
+                : workEntry.toolLifecycleStatus === "failed"
+                  ? "Failed"
+                  : workEntry.toolLifecycleStatus === "stopped"
+                    ? "Stopped"
+                    : workEntry.toolLifecycleStatus === "declined"
+                      ? "Declined"
+                      : "Done"}
+            </span>
+          ) : null}
           {createdThread ? (
             <button
               type="button"
@@ -5846,11 +5878,44 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
         (workEntry.projectedItem && plainOutput === undefined)) ? (
         <WorkLogDetails kind="panel">
           {workEntry.command ? (
-            <ToolCommandPanel threadRef={threadRef ?? undefined} activityId={workEntry.projectedItem?.item.id ?? workEntry.id} isRunning={workEntry.toolLifecycleStatus === "inProgress"} command={workEntry.command} rawCommand={workEntry.rawCommand} output={workEntry.detail} theme={resolvedTheme} />
+            <ToolCommandPanel
+              threadRef={threadRef ?? undefined}
+              activityId={workEntry.projectedItem?.item.id ?? workEntry.id}
+              isRunning={workEntry.toolLifecycleStatus === "inProgress"}
+              command={workEntry.command}
+              rawCommand={workEntry.rawCommand}
+              output={workEntry.detail}
+              theme={ctx.resolvedTheme}
+            />
           ) : workEntry.itemType === "file_change" && threadRef ? (
-            <SavedEditPanel threadRef={threadRef} activityId={workEntry.projectedItem?.item.id ?? workEntry.id} title={previewText} theme={resolvedTheme} fileActions={{threadRef,workspaceRoot,onOpenDiff:workEntry.runId ? (path) => ctx.onOpenTurnDiff(workEntry.runId!,path) : undefined}} />
-          ) : workEntry.itemType === "dynamic_tool" ? (
-            <ToolDetailsPanel title={previewText} text={expandedBody ?? ""} data={workEntry.toolData} theme={resolvedTheme} threadRef={threadRef ?? undefined} activityId={workEntry.projectedItem?.item.id ?? workEntry.id} />
+            <SavedEditPanel
+              threadRef={threadRef}
+              activityId={workEntry.projectedItem?.item.id ?? workEntry.id}
+              title={previewText}
+              theme={ctx.resolvedTheme}
+              fileActions={{
+                threadRef,
+                workspaceRoot,
+                onOpenDiff: workEntry.runId
+                  ? (path) => ctx.onOpenTurnDiff(workEntry.runId!, path)
+                  : undefined,
+              }}
+            />
+          ) : workEntry.itemType === "dynamic_tool" || workEntry.itemType === "web_search" ? (
+            <RetainedToolDetailsPanel
+              title={previewText}
+              text={expandedBody ?? ""}
+              data={workEntry.toolData}
+              theme={ctx.resolvedTheme}
+              threadRef={
+                threadRef ??
+                scopeThreadRef(
+                  ctx.activeThreadEnvironmentId,
+                  workEntry.projectedItem!.item.threadId,
+                )
+              }
+              activityId={workEntry.projectedItem?.item.id ?? workEntry.id}
+            />
           ) : workEntry.projectedItem && plainOutput === undefined ? (
             <V2ItemInspector
               projectedItem={workEntry.projectedItem}

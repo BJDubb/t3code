@@ -1,0 +1,13 @@
+name: Personal TestFlight build
+jobs:
+  build_ios:
+    type: build
+    env:
+      APP_VARIANT: production
+      T3CODE_PERSONAL_IOS: "1"
+      T3CODE_PERSONAL_EXPO_OWNER: neps-beck
+      T3CODE_PERSONAL_EAS_PROJECT_ID: 70cfda02-4792-410c-8df9-6a5ffdbd8fc5
+      T3CODE_PERSONAL_APPLE_TEAM_ID: QYLD5HP4HU
+    params:
+      platform: ios
+      profile: personal

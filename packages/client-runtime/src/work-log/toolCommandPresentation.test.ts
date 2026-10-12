@@ -3,12 +3,38 @@ import {
   commandScriptBody,
   plainToolOutput,
   shellDisplayTokens,
+  shellDisplayLines,
 } from "./toolCommandPresentation";
 import { describe, expect, it } from "vite-plus/test";
 import { toolCommandPresentation, displayShellCommand } from "./toolCommandPresentation";
 import { toolTextPreview } from "./toolCommandPresentation";
 
 describe("tool command presentation", () => {
+  it("does not label PowerShell control flow or request header fields as tools", () => {
+    const source =
+      "$profile = Get-Content eas.json; foreach ($property in $profile.env) { [Environment]::SetEnvironmentVariable($property.Name, $property.Value) }; $headers = @{ 'expo-platform'='ios'; 'expo-runtime-version'='fingerprint'; 'expo-channel-name'='personal' }; $workflow = (& eas workflow:view id --json) | ConvertFrom-Json; eas workflow:logs job-id";
+    const label = toolCommandPresentation(source, "Run shell commands").label;
+    expect(label).toBe("Read eas.json · Check workflow status · Read workflow logs");
+    expect(label).not.toContain("foreach");
+    expect(label).not.toContain("expo-");
+  });
+  it("describes the mixed read/search batch from the phone without collapsing it to a generic shell label", () => {
+    const source =
+      "Get-Content C:/Users/beckam/Dev/infra/README.md; Get-Content apps/mobile/src/features/updates/app-updates.ts | Select-Object -First 180; rg -n 'OTA|runtimeVersion' apps/mobile";
+    expect(toolCommandPresentation(source, "Run shell commands")).toMatchObject({
+      action: "Script",
+      label: "Read README.md · Read app-updates.ts · Search “OTA|runtimeVersion” in mobile",
+    });
+  });
+  it("breaks statements for display while preserving semicolons in quoted text", () => {
+    expect(shellDisplayLines("echo 'one;two'; git status --short")).toBe(
+      "echo 'one;two';\n git status --short",
+    );
+    expect(toolCommandPresentation("Get-Content file.ts; Remove-Item file.ts")).toMatchObject({
+      action: "Script",
+      label: "Read file.ts · Run Remove-Item",
+    });
+  });
   it("decodes a complete provider argument assembled from alternating quote fragments", () => {
     const command = `pwsh -Command '$r='"'C:/reports'; "'$rows=Get-Content "$r/results.json"; $rows|Where-Object Status -eq '"'Exception'|Select-Object Name"`;
     const script = `$r='C:/reports'; $rows=Get-Content "$r/results.json"; $rows|Where-Object Status -eq 'Exception'|Select-Object Name`;
@@ -43,7 +69,7 @@ describe("tool command presentation", () => {
       "@('Get-Content ''file.ts''', 'Get-Date') | powershell -Command -",
       "powershell",
       "Get-Content 'file.ts'\nGet-Date",
-      "Run PowerShell script",
+      "Read file.ts · Run Get-Date",
     ],
   ])(
     "presents complete script containers in their own language: %s",
@@ -110,8 +136,8 @@ describe("tool command presentation", () => {
     expect(toolCommandPresentation("vp test run", "Verify the command cards").label).toBe(
       "Verify the command cards",
     );
-    expect(toolCommandPresentation("vp test run", "Ran command").label).toBe("Run vp");
-    expect(toolCommandPresentation("vp test run", "Bash").label).toBe("Run vp");
+    expect(toolCommandPresentation("vp test run", "Ran command").label).toBe("Run tests");
+    expect(toolCommandPresentation("vp test run", "Bash").label).toBe("Run tests");
   });
   it("bounds multiline and minified previews without changing the source", () => {
     expect(toolTextPreview("a\nb\nc", 2)).toEqual({ text: "a\nb", truncated: true });
@@ -144,13 +170,12 @@ describe("tool command presentation", () => {
   ])("does not disguise complex commands as reads: %s", (command) => {
     expect(toolCommandPresentation(command)).toMatchObject({
       action: /[;\r\n]/.test(command) ? "Script" : "Command",
-      label: expect.not.stringContaining("Remove-Item"),
     });
   });
   it("identifies a simple search without hiding its arguments", () => {
     expect(toolCommandPresentation("rg -n route apps/web")).toMatchObject({
       action: "Search",
-      label: "Search workspace",
+      label: "Search “route” in web",
     });
   });
 });
@@ -161,7 +186,7 @@ it("unwraps a PowerShell launch path without losing script operations", () => {
   expect(displayShellCommand(wrapped).trim()).toBe(script);
   expect(toolCommandPresentation(wrapped)).toMatchObject({
     action: "Script",
-    label: "Run shell commands",
+    label: "Read a.ts · Run Remove-Item",
   });
 });
 

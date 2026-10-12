@@ -225,6 +225,11 @@ Expand a tool call in the conversation to see its full command and output.
 Summaries shorten shell wrappers and can still describe the latest call after it
 finishes; the call's own result shows its status.
 
+On mobile, each tool call appears between messages. Tap a call to inspect its
+command and output in a detail sheet, or long-press it to copy. When a shell
+wrapper is shortened, the original invocation is available in the same sheet.
+Tap **Thought process** to read the reasoning trace.
+
 ## Snooze until later
 
 Choose **Snooze → Custom…** from a thread's menu to pick a date and time in your

@@ -28,6 +28,7 @@ import {
   workEntryRowLabel,
   isContextHandoffActivityGroup,
   buildThreadFeed,
+  derivePersonalThreadFeedPresentation,
   deriveThreadFeedPresentation,
   threadFeedActivityIsVisible,
   threadFeedRunIsUnsettled,
@@ -2613,4 +2614,25 @@ describe("MCP apps", () => {
   it("keeps a running app call an ordinary work row", () => {
     expect(feed("running").some((candidate) => candidate.type === "mcp-app")).toBe(false);
   });
+});
+
+it("keeps every personal tool row visible with stable identities as a group grows", () => {
+  const items = [0, 1, 2].map((i) =>
+    projected(
+      {
+        ...base(`call-${i}`, "2026-10-13T00:00:00.000Z", i),
+        type: "command_execution",
+        input: `echo ${i}`,
+        output: "done",
+      },
+      i,
+    ),
+  );
+  const one = derivePersonalThreadFeedPresentation(buildThreadFeed(items.slice(0, 1)));
+  const three = derivePersonalThreadFeedPresentation(buildThreadFeed(items));
+  const calls = three.filter((row) => row.type === "activity-group");
+  expect(calls).toHaveLength(3);
+  expect(calls.every((row) => row.activities.length === 1)).toBe(true);
+  expect(calls[0]?.id).toBe(one.find((row) => row.type === "activity-group")?.id);
+  expect(three.some((row) => row.type === "work-toggle")).toBe(false);
 });

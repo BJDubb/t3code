@@ -5,6 +5,13 @@
     "promptToConfigurePushNotifications": false
   },
   "build": {
+    "personal-direct": {
+      "extends": "personal",
+      "distribution": "internal",
+      "ios": {
+        "enterpriseProvisioning": "adhoc"
+      }
+    },
     "personal": {
       "corepack": true,
       "distribution": "store",
@@ -14,11 +21,11 @@
       "env": {
         "APP_VARIANT": "production",
         "T3CODE_PERSONAL_IOS": "1",
-        "MOBILE_VERSION_POLICY": "appVersion",
+        "MOBILE_VERSION_POLICY": "fingerprint",
         "T3CODE_PERSONAL_EXPO_OWNER": "neps-beck",
         "T3CODE_PERSONAL_EAS_PROJECT_ID": "70cfda02-4792-410c-8df9-6a5ffdbd8fc5",
         "T3CODE_PERSONAL_APPLE_TEAM_ID": "QYLD5HP4HU",
-        "T3CODE_MOBILE_UPDATES_ENABLED": "0",
+        "T3CODE_MOBILE_UPDATES_ENABLED": "1",
         "T3CODE_CLERK_PUBLISHABLE_KEY": "pk_live_Y2xlcmsudDMuY29kZXMk",
         "T3CODE_CLERK_JWT_TEMPLATE": "t3-relay",
         "T3CODE_RELAY_URL": "https://relay.t3.codes",
@@ -92,7 +99,11 @@
     }
   },
   "submit": {
-    "personal": {},
+    "personal": {
+      "ios": {
+        "ascAppId": "6814363017"
+      }
+    },
     "v2-preview": {
       "extends": "production",
       "android": {

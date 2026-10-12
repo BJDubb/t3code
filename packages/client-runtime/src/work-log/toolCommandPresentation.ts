@@ -108,7 +108,7 @@ export function toolCommandPresentation(original: string, title?: string, descri
   const intent = title?.trim();
   if (
     intent &&
-    !/^(?:(?:ran|run|running|execute|executed)\s+)?(?:commands?|scripts?|shell|bash|powershell|terminal)$/i.test(
+    !/^(?:(?:ran|run|running|execute|executed)\s+)?(?:commands?|scripts?|(?:shell|bash|powershell|python|node|terminal)(?:\s+(?:commands?|scripts?))?)(?:\s+(?:ran|run|running|executed))?$/i.test(
       intent,
     ) &&
     intent !== original.trim() &&
@@ -126,13 +126,19 @@ export function toolCommandPresentation(original: string, title?: string, descri
   if (body)
     return {
       action: "Script",
-      label: body.label === "PowerShell script text" ? body.label : `Run ${body.label}`,
+      label:
+        detailedShellDescription(body.text) ??
+        (body.label === "PowerShell script text" ? body.label : `Run ${body.label}`),
       language: body.language,
     };
   // Recognize only literal file reads. Compound scripts and dynamic paths stay
   // visible as commands so a read label cannot conceal another operation.
   if (/^(?:rg|grep)\s/.test(command) && !/[;\r\n&|<>`$]/.test(command)) {
-    return { action: "Search", label: "Search workspace", language: shellLanguage(command) };
+    return {
+      action: "Search",
+      label: detailedShellDescription(command) ?? "Search workspace",
+      language: shellLanguage(command),
+    };
   }
   const segments = command
     .trim()
@@ -175,7 +181,25 @@ export function shellLanguage(command: string): string {
 /** A conservative display summary; quoted separators are not command boundaries. */
 export function commandNames(original: string): string[] {
   if (commandScriptBody(original)) return [];
-  const command = displayShellCommand(original);
+  const segments = shellCommandSegments(displayShellCommand(original));
+  const names = segments.flatMap((segment) => {
+    const match = /^\s*(?:[A-Za-z_][\w]*=\S+\s+)*(?:"([^"\n]+)"|'([^'\n]+)'|([\w./\\-]+))/.exec(
+      segment,
+    );
+    const candidate = match?.[1] ?? match?.[2] ?? match?.[3];
+    if (
+      !candidate ||
+      /[$;|&=\r\n]/.test(candidate) ||
+      (/\s/.test(candidate) && !/[\\/]/.test(candidate))
+    )
+      return [];
+    const name = candidate.split(/[\\/]/).at(-1);
+    return name && !/^(?:if|then|else|fi|for|do|done)$/.test(name) ? [name] : [];
+  });
+  return [...new Set(names)].slice(0, 6);
+}
+
+function shellCommandSegments(command: string): string[] {
   const segments: string[] = [];
   let quote = "";
   let start = 0;
@@ -199,23 +223,88 @@ export function commandNames(original: string): string[] {
     }
   }
   segments.push(command.slice(start));
-  const names = segments.flatMap((segment) => {
-    const match = /^\s*(?:[A-Za-z_][\w]*=\S+\s+)*(?:"([^"\n]+)"|'([^'\n]+)'|([\w./\\-]+))/.exec(
-      segment,
-    );
-    const candidate = match?.[1] ?? match?.[2] ?? match?.[3];
-    // A quoted string is only an executable name if it looks like a name or
-    // path. Script source and assignments must never become "Run $r=".
+  return segments;
+}
+
+function displayFileName(path: string): string {
+  return (
+    path
+      .replace(/\\/g, "/")
+      .split("/")
+      .findLast((part) => part.length > 0) ?? path
+  );
+}
+
+/** Describe literal operations, including mutations; never infer intent from quoted script text. */
+function detailedShellDescription(source: string): string | null {
+  const actions = shellCommandSegments(source).flatMap((segment) => {
+    const command = segment.trim().replace(/^\$[\w:]+\s*=\s*(?:\(\s*)?(?:&\s*)?/, "");
+    const read =
+      /^(?:Get-Content|cat)\s+(?:(?:-LiteralPath|-Path|-Raw)\s+)*(?:'([^']+)'|"([^"$`]+)"|([^\s$`<>'"]+))/i.exec(
+        command,
+      );
+    const path = read?.[1] ?? read?.[2] ?? read?.[3];
+    if (path && !/[$`*?]/.test(path)) return [`Read ${displayFileName(path)}`];
+    if (/^rg\s/.test(command)) {
+      if (/\s--files(?:\s|$)/.test(command)) return ["List workspace files"];
+      const args = command.match(/"(?:\\.|[^"\\])*"|'(?:''|[^'])*'|[^\s]+/g)?.slice(1) ?? [];
+      const positional: string[] = [];
+      for (let i = 0; i < args.length; i++) {
+        const arg = args[i]!;
+        if (
+          /^(?:-g|--glob|--iglob|-t|--type|--type-not|-m|--max-count|-A|-B|-C|--context)$/.test(arg)
+        ) {
+          i++;
+          continue;
+        }
+        if (arg.startsWith("-")) continue;
+        positional.push(arg.replace(/^(['"])([\s\S]*)\1$/, "$2"));
+      }
+      const query = positional[0];
+      if (query && !/[$`]/.test(query))
+        return [
+          `Search “${query.slice(0, 48)}${query.length > 48 ? "…" : ""}”${positional[1] ? ` in ${displayFileName(positional[1])}` : ""}`,
+        ];
+      return ["Search workspace"];
+    }
+    if (/^(?:vp|bun|pnpm|npm)\s+(?:run\s+)?test\b/.test(command)) return ["Run tests"];
     if (
-      !candidate ||
-      /[$;|&=\r\n]/.test(candidate) ||
-      (/\s/.test(candidate) && !/[\\/]/.test(candidate))
+      /\b(?:tsc\s+--noEmit|(?:run\s+)?typecheck)\b/.test(command) &&
+      /^(?:vp|bun|pnpm|npm|tsc)\b/.test(command)
+    )
+      return ["Check types"];
+    if (/^(?:vp|bun|pnpm|npm)\s+(?:run\s+)?lint\b/.test(command)) return ["Lint code"];
+    if (/^eas\s+build:view\b/.test(command)) return ["Check build status"];
+    if (/^eas\s+submit:status\b/.test(command)) return ["Check TestFlight status"];
+    if (/^eas\s+workflow:view\b/.test(command)) return ["Check workflow status"];
+    if (/^eas\s+workflow:logs\b/.test(command)) return ["Read workflow logs"];
+    if (/^git\s+status\b/.test(command)) return ["Inspect working tree"];
+    if (/^git\s+diff\b/.test(command)) return ["Review file changes"];
+    if (/^git\s+log\b/.test(command)) return ["Read commit history"];
+    if (/^git\s+branch\b/.test(command)) return ["List branches"];
+    // Control flow, object fields, and expressions are not executable names.
+    if (/^(?:foreach|for|if|else|try|catch|finally|return)\b|^[{}[('"$]|^[\w-]+\s*=/i.test(command))
+      return [];
+    if (
+      /^(?:Select-Object|Where-Object|ConvertFrom-Json|ConvertTo-Json|Set-Location|Out-Null)\b/i.test(
+        command,
+      )
     )
       return [];
-    const name = candidate.split(/[\\/]/).at(-1);
-    return name && !/^(?:if|then|else|fi|for|do|done)$/.test(name) ? [name] : [];
+    const name = commandNames(command)[0];
+    return name ? [`Run ${name}`] : [];
   });
-  return [...new Set(names)].slice(0, 6);
+  const distinct = [...new Set(actions)];
+  // Generic executable names add no detail beyond the existing interpreter label.
+  if (!distinct.some((action) => !action.startsWith("Run ") || action === "Run tests")) return null;
+  return `${distinct.slice(0, 3).join(" · ")}${distinct.length > 3 ? ` · +${distinct.length - 3} more` : ""}`;
+}
+
+/** Presentation-only line breaks. Quoted strings and copied invocations stay unchanged. */
+export function shellDisplayLines(source: string): string {
+  return shellDisplayTokens(source)
+    .map((token) => (token.kind === "operator" ? token.text.replace(/;/g, ";\n") : token.text))
+    .join("");
 }
 
 /** Remove terminal styling for plain-text previews; saved and copied output stays intact. */
@@ -275,6 +364,8 @@ export function shellDisplayTokens(source: string) {
 
 function shellCommandDescription(command: string): string {
   const trimmed = command.trim();
+  const detail = detailedShellDescription(command);
+  if (detail) return detail;
   if (/^\$[\w:]+\s*=/.test(trimmed)) return "Run PowerShell script";
   if (/^git status(?:\s|$)/i.test(trimmed) && !/[;|&\n]/.test(trimmed))
     return "Inspect working tree";

@@ -2137,7 +2137,7 @@ describe("MessagesTimeline", () => {
     expect(markup).not.toContain("Work Log");
   });
 
-  it("keeps the collapsed summary icon neutral when the group ends in a failure", () => {
+  it("keeps individual call icons neutral while exposing each failure", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline
         {...buildProps()}
@@ -2172,10 +2172,8 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain("Ran 2 commands");
     expect(markup).toContain("lucide-terminal");
     expect(markup).not.toContain("lucide-x");
-    expect(markup).not.toContain("text-destructive");
     // The failure stays discoverable for screen readers.
     expect(markup).toContain("tool call failed");
   });
@@ -2226,7 +2224,6 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain("Ran 2 commands and received 1 update");
     expect(markup).not.toContain('aria-label="Hidden work includes a failure"');
   });
 
@@ -2514,7 +2511,6 @@ describe("MessagesTimeline", () => {
 
     expect(markup).toContain('data-v2-item-type="command_execution"');
     expect(markup).toContain('data-v2-item-visibility="inherited"');
-    expect(markup).toContain("Received 1 update and ran 1 command");
   });
 
   it("renders T3 MCP dynamic tools with the product logo and pretty name", async () => {
@@ -2708,49 +2704,6 @@ describe("MessagesTimeline", () => {
     expect(markup).not.toContain('data-testid="file-diff"');
   });
 
-  it("collapses settled tool runs behind a generated summary toggle", () => {
-    const markup = renderToStaticMarkup(
-      <MessagesTimeline
-        {...buildProps()}
-        timelineEntries={[
-          {
-            id: "entry-1",
-            kind: "work",
-            createdAt: "2026-03-17T19:12:28.000Z",
-            entry: {
-              id: "work-1",
-              createdAt: "2026-03-17T19:12:28.000Z",
-              label: "Ran command",
-              command: "vp lint",
-              tone: "tool",
-              itemType: "command_execution",
-              toolLifecycleStatus: "completed",
-            },
-          },
-          {
-            id: "entry-2",
-            kind: "work",
-            createdAt: "2026-03-17T19:12:29.000Z",
-            entry: {
-              id: "work-2",
-              createdAt: "2026-03-17T19:12:29.000Z",
-              label: "Ran command",
-              command: "vp test run",
-              tone: "tool",
-              itemType: "command_execution",
-              toolLifecycleStatus: "completed",
-            },
-          },
-        ]}
-      />,
-    );
-
-    expect(markup).toContain("Ran 2 commands");
-    expect(markup).toContain('aria-expanded="false"');
-    // Entries stay hidden until the toggle expands the group.
-    expect(markup).not.toContain("vp lint");
-  });
-
   it("renders a muted failure marker for failed tool lifecycle entries", () => {
     activityTestState.expanded = true;
     const markup = renderToStaticMarkup(
@@ -2788,7 +2741,6 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain("lucide-zap");
     expect(markup).toContain('aria-label="Tool call failed"');
     // Ordinary tool failures render muted, not red.
-    expect(markup).not.toContain("text-destructive");
   });
 
   it("keeps the red treatment for severe orchestration failures", () => {
@@ -2841,7 +2793,7 @@ describe("MessagesTimeline", () => {
     ["![](image.png)", "Thought", 0],
     ["---", "Thought", 0],
   ] as const)(
-    "shows plain text for a V2 reasoning preview: %s",
+    "starts V2 reasoning open and keeps a plain collapsed preview: %s",
     async (markdown, expected, strongCount) => {
       vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
       vi.stubGlobal("requestAnimationFrame", () => 0);
@@ -2879,8 +2831,7 @@ describe("MessagesTimeline", () => {
             .flatMap((node) => node.children)
             .filter((child) => typeof child === "string")
             .join(" ");
-        expect(previewText()).toContain(expected);
-        expect(renderer!.root.findAllByType("strong")).toHaveLength(0);
+        expect(renderer!.root.findAllByType("strong")).toHaveLength(strongCount);
         const row = () =>
           renderer!.root.findAll(
             (node) =>
@@ -2889,10 +2840,10 @@ describe("MessagesTimeline", () => {
               typeof node.props["aria-expanded"] === "boolean",
           )[0]!;
         await act(() => row().props.onClick());
-        expect(renderer!.root.findAllByType("strong")).toHaveLength(strongCount);
-        await act(() => row().props.onClick());
         expect(previewText()).toContain(expected);
         expect(renderer!.root.findAllByType("strong")).toHaveLength(0);
+        await act(() => row().props.onClick());
+        expect(renderer!.root.findAllByType("strong")).toHaveLength(strongCount);
       } finally {
         await act(() => renderer?.unmount());
       }

@@ -118,3 +118,8 @@ download updates in the background and apply them when you next leave the app.
 It saves drafts and queued messages before restarting. If you keep the app open
 for a long time, it may ask to install immediately; choosing **Later** leaves the
 update queued for the next suitable moment.
+
+Open **Settings → App updates** to see your installed app version, the running
+update, and any update waiting to install. **Check for updates** downloads a
+compatible update; **Restart to install update** saves pending writes before
+restarting. Changes that require new native features need a new app installation.

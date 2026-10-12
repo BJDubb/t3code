@@ -6,14 +6,18 @@ import { orchestrationEnvironment } from "../../state/orchestration";
 import { ToolOutputViewer } from "./ToolOutputViewer";
 import { ToolTextDialog } from "./ToolTextDialog";
 import { ToolTextBlock, ToolCopyButton } from "./ToolTextBlock";
-import { shellLanguage, displayShellCommand, commandScriptBody } from "./toolCommandPresentation";
+import {
+  shellLanguage,
+  displayShellCommand,
+  commandScriptBody,
+} from "@t3tools/client-runtime/work-log/tool-command-presentation";
 
 function DetailAction({ children, onClick }: { children: string; onClick: () => void }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+      className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
     >
       {children}
       <ArrowUpRightIcon aria-hidden className="size-3" />

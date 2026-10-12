@@ -1,5 +1,4 @@
 import { PERSONAL_WS_METHODS } from "@t3tools/contracts";
-import { PERSONAL_WS_METHODS } from "@t3tools/contracts";
 import { OrchestrationDispatchCommandError } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
@@ -1872,7 +1871,6 @@ const layerWsRpc = (
         [ORCHESTRATION_V2_WS_METHODS.stopWorkflow]: (input) => threadManagement.stopWorkflow(input),
         [ORCHESTRATION_V2_WS_METHODS.getWorkflowScript]: (input) =>
           readWorkflowScript({ scriptPath: input.scriptPath }),
-        [PERSONAL_WS_METHODS.getToolOutput]: (input) => threadManagement.getToolOutput(input),
         [PERSONAL_WS_METHODS.getToolOutput]: (input) => threadManagement.getToolOutput(input),
         [ORCHESTRATION_V2_WS_METHODS.getTurnItem]: (input) =>
           threadManagement.getTurnItem(input).pipe(

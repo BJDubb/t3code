@@ -33,6 +33,7 @@ import {
   getAgentAwarenessRegistrationStatus,
   mergeAgentAwarenessRegistrationPreferences,
   refreshActiveLiveActivityRemoteRegistration,
+  refreshForegroundAgentLiveActivities,
   refreshAgentAwarenessRegistration,
   registerAgentAwarenessConnection,
   registerLiveActivityPushToken,
@@ -1140,4 +1141,79 @@ describe("makeRelayDeviceRegistrationRequest", () => {
       }).pipe(Effect.provide(layerRelayTest));
     },
   );
+  for (const scenario of ["running", "idle", "unreachable"] as const) {
+    it.effect(`reconciles an existing foreground card when the snapshot is ${scenario}`, () => {
+      vi.spyOn(Platform, "OS", "get").mockReturnValue("ios");
+      vi.spyOn(Platform, "Version", "get").mockReturnValue(18);
+      vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+      const aggregate = {
+        title: "Agent work",
+        subtitle: "Working",
+        activeCount: 1,
+        updatedAt: "2026-10-12T00:00:00.000Z",
+        activities: [
+          {
+            environmentId: "env-1",
+            threadId: "thread-1",
+            projectTitle: "Project",
+            threadTitle: "Thread",
+            modelTitle: "Codex",
+            phase: "running",
+            status: "Working",
+            updatedAt: "2026-10-12T00:00:00.000Z",
+            deepLink: "/thread/thread-1",
+          },
+        ],
+      };
+      const activity = {
+        update: vi.fn(() => Promise.resolve()),
+        end: vi.fn(() => Promise.resolve()),
+      };
+      widgetMocks.getInstances.mockReturnValue([activity as never]);
+      vi.stubGlobal("fetch", (input: RequestInfo | URL) => {
+        const url = input instanceof Request ? input.url : String(input);
+        if (url.endsWith("/v1/client/dpop-token"))
+          return Promise.resolve(
+            Response.json({
+              access_token: "dpop",
+              issued_token_type: "urn:ietf:params:oauth:token-type:access_token",
+              token_type: "DPoP",
+              expires_in: 300,
+              scope: "mobile:registration",
+            }),
+          );
+        return Promise.resolve(
+          scenario === "unreachable"
+            ? new Response("offline", { status: 503 })
+            : Response.json({ aggregate: scenario === "running" ? aggregate : null }),
+        );
+      });
+      Constants.expoConfig!.extra = {
+        relay: { url: `https://foreground-${scenario}.example.test` },
+      };
+      setAgentAwarenessRelayTokenProvider(() => Promise.resolve("clerk-token"), "user-a");
+      return Effect.gen(function* () {
+        yield* refreshForegroundAgentLiveActivities();
+        if (scenario === "running") {
+          expect(activity.update).toHaveBeenCalledWith(aggregate, new Date(1_600_000));
+          expect(activity.end).not.toHaveBeenCalled();
+        } else if (scenario === "idle") {
+          expect(activity.end).toHaveBeenCalledWith("immediate");
+          expect(activity.update).not.toHaveBeenCalled();
+        } else {
+          expect(activity.update).not.toHaveBeenCalled();
+          expect(activity.end).not.toHaveBeenCalled();
+        }
+      }).pipe(
+        Effect.provide(
+          Layer.fresh(
+            ManagedRelayLayer.layer(`https://foreground-${scenario}.example.test`).pipe(
+              Layer.provide(Layer.mergeAll(FetchHttpClient.layer, Dpop.layer)),
+            ),
+          ),
+        ),
+        Effect.provideService(FetchHttpClient.Fetch, globalThis.fetch),
+      );
+    });
+  }
 });

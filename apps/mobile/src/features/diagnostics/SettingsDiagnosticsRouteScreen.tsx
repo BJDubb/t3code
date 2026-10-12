@@ -18,6 +18,8 @@ import {
   type StartupCrashRecord,
 } from "./crash-log-model";
 
+import { chatScrollRecorder } from "./chat-scroll-report";
+
 // expo-updates keeps its persistent log this long. Reading any further back
 // returns nothing, so this is the whole available window.
 const LOG_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
@@ -48,6 +50,7 @@ export function SettingsDiagnosticsRouteScreen() {
     Updates.isEnabled ? { status: "loading" } : { status: "unavailable" },
   );
   const [copied, setCopied] = useState(false);
+  const [scrollReportCopied, setScrollReportCopied] = useState(false);
 
   useEffect(() => {
     if (!Updates.isEnabled) return;
@@ -106,6 +109,35 @@ export function SettingsDiagnosticsRouteScreen() {
               <CrashRow key={record.timestamp} record={record} first={index === 0} />
             ))
           )}
+        </SettingsSection>
+
+        <SettingsSection title="Chat scrolling">
+          <SettingsActionRow
+            icon={scrollReportCopied ? "checkmark" : "doc.on.doc"}
+            label={scrollReportCopied ? "Copied" : "Copy scrolling report"}
+            onPress={() => {
+              void tryCopyTextWithHaptic(
+                chatScrollRecorder.report({
+                  ...appIdentity(),
+                  updateId: Updates.updateId,
+                  runtime: Updates.runtimeVersion,
+                }),
+                { target: "scrolling report" },
+              ).then(setScrollReportCopied);
+            }}
+          />
+          <SettingsActionRow
+            icon="arrow.clockwise"
+            label="Clear scrolling report"
+            onPress={() => {
+              chatScrollRecorder.clear();
+              setScrollReportCopied(false);
+            }}
+          />
+          <Text className="px-2 py-2 text-sm leading-normal text-foreground-muted">
+            Copy this after a chat jumps, before closing the app. It records scrolling positions and
+            app state, without message or command text.
+          </Text>
         </SettingsSection>
 
         <View className="gap-3">

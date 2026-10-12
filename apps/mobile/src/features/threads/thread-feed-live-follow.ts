@@ -12,6 +12,20 @@ export type ThreadFeedLiveFollowEvent =
       readonly userScrollSessionActive: boolean;
     };
 
+/** A reconnect can briefly remove detail data; keep the mounted reader's snapshot. */
+export function resolveThreadFeedSnapshot<T>(
+  previous: { readonly threadKey: string; readonly feed: ReadonlyArray<T> },
+  threadKey: string,
+  feed: ReadonlyArray<T>,
+  retainWhileLoading: boolean,
+) {
+  return retainWhileLoading && feed.length === 0 && previous.threadKey === threadKey
+    ? previous
+    : previous.threadKey === threadKey && previous.feed === feed
+      ? previous
+      : { threadKey, feed };
+}
+
 export interface ThreadWorkGroupScrollPosition {
   readonly rowId: string;
   readonly offsetWithinRow: number;
@@ -87,4 +101,27 @@ export function resolveThreadFeedLiveFollow(
       }
       return current;
   }
+}
+
+export interface ThreadFeedReadingPosition {
+  readonly rowId: string;
+  readonly offsetWithinRow: number;
+  readonly followEnd: boolean;
+}
+
+export function resolveThreadFeedReturnScroll(
+  rows: ReadonlyArray<{ readonly id: string }>,
+  position: ThreadFeedReadingPosition | undefined,
+) {
+  if (!position || position.followEnd) return undefined;
+  const index = rows.findIndex((row) => row.id === position.rowId);
+  return index >= 0 ? { index, viewOffset: -position.offsetWithinRow } : undefined;
+}
+
+/** Missing history is a pending restore, not permission to follow the live edge. */
+export function threadFeedReturnScrollIsPending(
+  rows: ReadonlyArray<{ readonly id: string }>,
+  position: ThreadFeedReadingPosition | undefined,
+) {
+  return !!position && !position.followEnd && !rows.some((row) => row.id === position.rowId);
 }

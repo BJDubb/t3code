@@ -1483,7 +1483,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         });
         const driver = yield* makeGitVcsDriverCore().pipe(
           Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
-          Effect.provide(ServerConfigLayer),
+          Effect.provide(layerServerConfig),
         );
         const preview = yield* driver.getReviewDiffPreview({
           cwd,

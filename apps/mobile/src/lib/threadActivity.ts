@@ -1898,3 +1898,21 @@ export function buildThreadFeed(
   }
   return groupAdjacentActivities(entries);
 }
+
+const personalActivityRows = new WeakMap<ThreadFeedActivityGroup, ThreadFeedEntry[]>();
+/** Keep every call in the main feed; each row opens its own details sheet. */
+export function derivePersonalThreadFeedPresentation(feed: ReadonlyArray<ThreadFeedEntry>) {
+  return feed.flatMap((entry): ThreadFeedEntry[] => {
+    if (entry.type === "work-toggle" || entry.type === "run-fold") return [];
+    if (entry.type !== "activity-group") return [entry];
+    const cached = personalActivityRows.get(entry);
+    if (cached) return cached;
+    const rows = entry.activities.map((activity) => ({
+      ...entry,
+      id: `work-call:${activity.id}`,
+      activities: [activity],
+    }));
+    personalActivityRows.set(entry, rows);
+    return rows;
+  });
+}

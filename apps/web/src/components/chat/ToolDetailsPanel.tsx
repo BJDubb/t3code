@@ -17,7 +17,7 @@ import {
 import { Dialog, DialogPopup, DialogHeader, DialogTitle } from "../ui/dialog";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 import { ToolCopyButton, ToolTextBlock } from "./ToolTextBlock";
-import { useThread, useProject } from "../../state/entities";
+import { useThreadShell, useProject } from "../../state/entities";
 import { useRightPanelStore } from "../../rightPanelStore";
 import {
   useFileContextMenuHandler,
@@ -179,6 +179,34 @@ function EditDiff({
   );
 }
 
+/** Fetch retained output only when a dynamic call's details are open. */
+export function RetainedToolDetailsPanel(
+  props: Parameters<typeof ToolDetailsPanel>[0] & {
+    threadRef: ScopedThreadRef;
+    activityId: string;
+  },
+) {
+  const result = useAtomValue(
+    orchestrationEnvironment.toolOutput({
+      environmentId: props.threadRef.environmentId,
+      input: {
+        threadId: props.threadRef.threadId,
+        activityId: EventId.make(props.activityId),
+        offset: 0,
+      },
+    }),
+  );
+  const output =
+    result._tag === "Success" && result.value.available ? result.value.contents : undefined;
+  const data = { ...record(props.data) };
+  // V2 wire output is a bounded preview; only the retained fetch supplies results.
+  delete data.output;
+  delete data.result;
+  delete data.response;
+  if (output !== undefined) data.output = output;
+  return <ToolDetailsPanel {...props} data={data} />;
+}
+
 export function ToolDetailsPanel({
   title,
   text,
@@ -264,7 +292,7 @@ export function ToolDetailsPanel({
                   <button
                     type="button"
                     onClick={() => setShowOutput(true)}
-                    className="rounded px-2 py-1 text-xs text-muted-foreground hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+                    className="rounded px-2 py-1 text-xs text-muted-foreground hover:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                   >
                     Full output &#8599;
                   </button>
@@ -491,7 +519,7 @@ function CompactToolDiff({
 }) {
   const [expanded, setExpanded] = useState(false);
   const filePath = resolveFileDiffPath(file);
-  const thread = useThread(fileActions?.threadRef ?? null);
+  const thread = useThreadShell(fileActions?.threadRef ?? null);
   const project = useProject(
     thread?.projectId ? { environmentId: thread.environmentId, projectId: thread.projectId } : null,
   );
@@ -543,7 +571,7 @@ function CompactToolDiff({
               );
             }}
             aria-label={`Open ${openFile ? "file" : "diff"} for ${filePath}`}
-            className="min-w-0 truncate text-info-foreground underline decoration-current/40 underline-offset-2 enabled:hover:decoration-current focus-visible:ring-2 focus-visible:ring-ring"
+            className="min-w-0 truncate text-info-foreground underline decoration-current/40 underline-offset-2 enabled:hover:decoration-current focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
           >
             {resolveFileDiffPath(file).replace(/\\/g, "/").split("/").at(-1)}
           </TooltipTrigger>

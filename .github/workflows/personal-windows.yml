@@ -19,6 +19,8 @@ jobs:
         shell: pwsh
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb
         with:
           node-version-file: package.json
@@ -49,7 +51,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify tool-call behavior
         run: |
-          vp test run packages/shared/src/toolSummary.test.ts apps/server/src/orchestration/ActivityPayloadProjection.test.ts apps/web/src/components/chat/ToolDetailsPanel.test.tsx apps/mobile/src/lib/threadActivity.test.ts apps/web/src/components/chat/toolCommandPresentation.test.ts apps/web/src/components/chat/MessagesTimeline.logic.test.ts apps/web/src/components/chat/MessagesTimeline.test.tsx apps/web/src/session-logic.test.ts apps/web/src/hooks/useNewScratchThread.test.ts packages/client-runtime/src/operations/projects.test.ts apps/server/src/orchestration/toolOutputQuery.test.ts apps/server/src/checkpointing/CheckpointDiffQuery.test.ts apps/web/src/hooks/useWorkspaceMutationRefresh.lifecycle.test.ts
+          vp test run packages/shared/src/toolSummary.test.ts apps/web/src/components/chat/ToolDetailsPanel.test.tsx apps/mobile/src/lib/threadActivity.test.ts packages/client-runtime/src/work-log/toolCommandPresentation.test.ts apps/mobile/src/features/diagnostics/chat-scroll-report.test.ts scripts/legend-list-user-drag.test.ts apps/web/src/components/chat/MessagesTimeline.logic.test.ts apps/web/src/components/chat/MessagesTimeline.test.tsx apps/web/src/session-logic.test.ts packages/client-runtime/src/operations/projects.test.ts apps/server/src/orchestration-v2/toolOutputQuery.test.ts apps/server/src/checkpointing/CheckpointDiffQuery.test.ts apps/web/src/hooks/useWorkspaceMutationRefresh.lifecycle.test.ts
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify scoped Git diff previews
         run: |
@@ -61,6 +63,8 @@ jobs:
             $version = $env:GITHUB_REF_NAME -replace '^personal-v', ''
           } else {
             $base = (Get-Content apps/server/package.json -Raw | ConvertFrom-Json).version -replace '-.*$', ''
+            $adoptedNightly = & git describe --tags --abbrev=0 --match 'v*-nightly.*' HEAD 2>$null
+            if ($adoptedNightly -match '^v(\d+\.\d+\.\d+)-nightly\.') { $base = $Matches[1] }
             $version = "$base-preview.$(Get-Date -Format yyyyMMdd).$env:GITHUB_RUN_NUMBER"
           }
           ./scripts/build-personal.ps1 -Version $version

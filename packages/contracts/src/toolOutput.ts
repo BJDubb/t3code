@@ -19,4 +19,3 @@ export class OrchestrationGetToolOutputError extends Schema.TaggedError<Orchestr
   "OrchestrationGetToolOutputError",
   { message: TrimmedNonEmptyString },
 ) {}
-

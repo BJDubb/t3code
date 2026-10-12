@@ -1,3 +1,4 @@
+import { ToolDetailsModal } from "./ToolDetailsModal";
 import { SubagentStatusDot } from "./SubagentStatusDot";
 import { ThreadSubagentGroup } from "./thread-subagent-group";
 import {
@@ -982,7 +983,7 @@ const ThreadWorkLogRow = memo(function ThreadWorkLogRow(
     ? getQuestionAnswerPreview(row.workEntry.questionAnswer)
     : null;
   const accessiblePreview = [previewText, answerPreview].filter(Boolean).join(": ");
-  const displayText = workEntryRowLabel(row.workEntry, expanded);
+  const displayText = reasoning ? "Thought process" : workEntryRowLabel(row.workEntry, expanded);
   const isSystemNotice = row.projectedItem.item.type === "system_notice";
   const isUsageLimit =
     row.projectedItem.item.type === "error" &&
@@ -1112,7 +1113,7 @@ const ThreadWorkLogRow = memo(function ThreadWorkLogRow(
             {canExpand ? (
               <ThreadDisclosureChevron
                 expanded={expanded}
-                collapsedDirection="down"
+                collapsedDirection="right"
                 size={11}
                 tintColor={props.iconSubtleColor}
               />
@@ -1129,89 +1130,92 @@ const ThreadWorkLogRow = memo(function ThreadWorkLogRow(
         viewedImagePath ||
         outputImages.length > 0 ||
         row.workEntry.questionAnswer) ? (
-        <Animated.View
-          entering={WORK_LOG_DETAIL_ENTER_TRANSITION}
-          exiting={WORK_LOG_DETAIL_EXIT_TRANSITION}
-          layout={WORK_LOG_LAYOUT_TRANSITION}
-          className={reasoning ? "ml-7 py-1" : "pb-1 pt-0.5"}
-        >
-          {row.workEntry.questionAnswer ? (
-            <QuestionAnswerHistory
-              environmentId={props.environmentId}
-              answer={row.workEntry.questionAnswer}
-            />
-          ) : null}
-          {viewedImagePath ? (
-            <View className="pb-1.5">
-              {props.renderImage({ href: viewedImagePath, alt: null, title: null })}
-            </View>
-          ) : null}
-          <FilePreviewGallery
-            value={outputImages.map((resource) => ({
-              kind: "image",
-              environmentId: props.environmentId,
-              resource,
-            }))}
-          >
-            {outputImages.map((resource) => (
-              <View key={resource.index} className="pb-1.5">
-                <ThreadMarkdownImage
+        <ToolDetailsModal
+          open={expanded}
+          onClose={() => props.onToggleRow(row.id, props.anchorKey)}
+          title={displayText}
+          command={
+            shownItem.type === "command_execution" ? (shownItem.input ?? undefined) : undefined
+          }
+          output={fetchedOutput ?? undefined}
+          detailContent={
+            <View>
+              {row.workEntry.questionAnswer ? (
+                <QuestionAnswerHistory
                   environmentId={props.environmentId}
-                  resource={resource}
-                  alt={null}
-                  onPressPreview={props.onPressPreview}
+                  answer={row.workEntry.questionAnswer}
                 />
-              </View>
-            ))}
-          </FilePreviewGallery>
-          <ScrollView
-            nestedScrollEnabled
-            directionalLockEnabled
-            showsVerticalScrollIndicator
-            className="max-h-60"
-            contentContainerStyle={{ paddingRight: 8 }}
-          >
-            {reasoning ? (
-              props.renderReasoning(reasoning.text)
-            ) : call ? (
-              [
-                call.command,
-                ...(call.args ?? []).map(([key, value]) => `${key} ${value}`),
-                call.argsText,
-              ]
-                .filter((line): line is string => Boolean(line))
-                .map((line, index) => (
-                  <Text
-                    key={`${index}:${line}`}
-                    selectable
-                    className="font-mono text-2xs leading-normal text-foreground"
-                  >
-                    {line}
-                  </Text>
-                ))
-            ) : fullDetail ? (
-              <Text selectable className="font-mono text-2xs leading-normal text-foreground-muted">
-                {fullDetail}
-              </Text>
-            ) : null}
-            {fetchedOutput ? (
-              <Text
-                selectable
-                className={cn(
-                  "font-mono text-2xs leading-normal text-foreground-muted",
-                  (!call || call.command || call.args || call.argsText) && "mt-1.5",
-                )}
+              ) : null}
+              {viewedImagePath ? (
+                <View className="pb-1.5">
+                  {props.renderImage({ href: viewedImagePath, alt: null, title: null })}
+                </View>
+              ) : null}
+              <FilePreviewGallery
+                value={outputImages.map((resource) => ({
+                  kind: "image",
+                  environmentId: props.environmentId,
+                  resource,
+                }))}
               >
-                {fetchedOutput}
-              </Text>
-            ) : null}
-            {failedExitCode !== null ? (
-              <Text className="mt-1.5 font-mono text-2xs leading-normal text-danger-foreground">
-                exit {failedExitCode}
-              </Text>
-            ) : null}
-          </ScrollView>
-        </Animated.View>
+                {outputImages.map((resource) => (
+                  <View key={resource.index} className="pb-1.5">
+                    <ThreadMarkdownImage
+                      environmentId={props.environmentId}
+                      resource={resource}
+                      alt={null}
+                      onPressPreview={props.onPressPreview}
+                    />
+                  </View>
+                ))}
+              </FilePreviewGallery>
+              <View style={{ paddingRight: 8 }}>
+                {reasoning ? (
+                  props.renderReasoning(reasoning.text)
+                ) : call ? (
+                  [
+                    call.command,
+                    ...(call.args ?? []).map(([key, value]) => `${key} ${value}`),
+                    call.argsText,
+                  ]
+                    .filter((line): line is string => Boolean(line))
+                    .map((line, index) => (
+                      <Text
+                        key={`${index}:${line}`}
+                        selectable
+                        className="font-mono text-2xs leading-normal text-foreground"
+                      >
+                        {line}
+                      </Text>
+                    ))
+                ) : fullDetail ? (
+                  <Text
+                    selectable
+                    className="font-mono text-2xs leading-normal text-foreground-muted"
+                  >
+                    {fullDetail}
+                  </Text>
+                ) : null}
+                {fetchedOutput ? (
+                  <Text
+                    selectable
+                    className={cn(
+                      "font-mono text-2xs leading-normal text-foreground-muted",
+                      (!call || call.command || call.args || call.argsText) && "mt-1.5",
+                    )}
+                  >
+                    {fetchedOutput}
+                  </Text>
+                ) : null}
+                {failedExitCode !== null ? (
+                  <Text className="mt-1.5 font-mono text-2xs leading-normal text-danger-foreground">
+                    exit {failedExitCode}
+                  </Text>
+                ) : null}
+              </View>
+            </View>
+          }
+        />
       ) : null}
     </Animated.View>
   );
@@ -1304,7 +1308,7 @@ export function ThreadWorkGroupToggle(props: {
         )}
         <ThreadDisclosureChevron
           expanded={props.expanded}
-          collapsedDirection="down"
+          collapsedDirection="right"
           size={11}
           tintColor={props.iconSubtleColor}
         />
@@ -1390,7 +1394,7 @@ export const ThreadAgentSpawnCard = memo(function ThreadAgentSpawnCard(props: {
           {canExpand ? (
             <ThreadDisclosureChevron
               expanded={expanded}
-              collapsedDirection="down"
+              collapsedDirection="right"
               size={11}
               tintColor={props.iconSubtleColor}
             />

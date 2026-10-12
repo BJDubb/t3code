@@ -2,6 +2,9 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   resolveThreadFeedLiveFollow,
+  resolveThreadFeedSnapshot,
+  resolveThreadFeedReturnScroll,
+  threadFeedReturnScrollIsPending,
   resolveThreadFeedSubmissionAnchor,
   resolveThreadWorkGroupInitialScroll,
   shouldFollowThreadWorkGroupAppend,
@@ -219,5 +222,48 @@ describe("resolveThreadFeedLiveFollow", () => {
 
   it("re-arms after an explicit reset", () => {
     expect(resolveThreadFeedLiveFollow(false, { type: "reset" })).toBe(true);
+  });
+});
+
+describe("conversation snapshot during reconnect", () => {
+  it("retains populated rows during loading, replaces them after recovery, and clears on deletion or thread switch", () => {
+    const previous = { threadKey: "env:thread", feed: [{ id: "reading-here" }] };
+    expect(resolveThreadFeedSnapshot(previous, previous.threadKey, [], true)).toBe(previous);
+    const recovered = [...previous.feed, { id: "new-call" }];
+    expect(resolveThreadFeedSnapshot(previous, previous.threadKey, recovered, false).feed).toBe(
+      recovered,
+    );
+    expect(resolveThreadFeedSnapshot(previous, previous.threadKey, [], false).feed).toEqual([]);
+    expect(resolveThreadFeedSnapshot(previous, "other:thread", [], true).feed).toEqual([]);
+  });
+});
+
+describe("returning to a conversation", () => {
+  it("restores the reading row after new history arrives, while followers return to the live edge", () => {
+    const saved = { rowId: "reading", offsetWithinRow: 74, followEnd: false };
+    expect(
+      resolveThreadFeedReturnScroll(
+        [{ id: "older" }, { id: "reading" }, { id: "new-call" }],
+        saved,
+      ),
+    ).toEqual({ index: 1, viewOffset: -74 });
+    expect(
+      resolveThreadFeedReturnScroll([{ id: "reading" }], { ...saved, followEnd: true }),
+    ).toBeUndefined();
+    expect(resolveThreadFeedReturnScroll([{ id: "other-thread" }], saved)).toBeUndefined();
+  });
+});
+
+describe("reading-position restoration while history downloads", () => {
+  it("waits through an empty and partial snapshot until the reading row arrives", () => {
+    const saved = { rowId: "reading", offsetWithinRow: 74, followEnd: false };
+    expect(threadFeedReturnScrollIsPending([], saved)).toBe(true);
+    const partial = [{ id: "recent-only" }];
+    expect(threadFeedReturnScrollIsPending(partial, saved)).toBe(true);
+    const synced = [{ id: "older" }, { id: "reading" }, ...partial];
+    expect(threadFeedReturnScrollIsPending(synced, saved)).toBe(false);
+    expect(resolveThreadFeedReturnScroll(synced, saved)).toEqual({ index: 1, viewOffset: -74 });
+    expect(threadFeedReturnScrollIsPending(partial, { ...saved, followEnd: true })).toBe(false);
+    expect(threadFeedReturnScrollIsPending([], undefined)).toBe(false);
   });
 });

@@ -2,14 +2,17 @@ import { useEffect, useRef, useState } from "react";
 import { getSyntaxHighlighterPromise } from "../../lib/syntaxHighlighting";
 import { resolveDiffThemeName } from "../../lib/diffRendering";
 import { writeTextToClipboard } from "../../hooks/useCopyToClipboard";
-import { shellDisplayTokens, toolTextPreview } from "./toolCommandPresentation";
+import {
+  shellDisplayTokens,
+  toolTextPreview,
+} from "@t3tools/client-runtime/work-log/tool-command-presentation";
 
 export function ToolCopyButton({ text, label = "Copy" }: { text: string; label?: string }) {
   const [status, setStatus] = useState(label);
   return (
     <button
       type="button"
-      className="rounded px-2 py-1 text-xs text-muted-foreground hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+      className="rounded px-2 py-1 text-xs text-muted-foreground hover:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       onClick={async () => {
         try {
           await writeTextToClipboard(text, "tool details");
@@ -91,7 +94,7 @@ export function ToolTextBlock({
           <button
             type="button"
             onClick={collapse}
-            className="pointer-events-auto h-7 rounded-full border border-border bg-background px-3 text-xs text-muted-foreground shadow-sm hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+            className="pointer-events-auto h-7 rounded-full border border-border bg-background px-3 text-xs text-muted-foreground shadow-sm hover:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
           >
             Show less
           </button>
@@ -136,7 +139,7 @@ export function ToolTextBlock({
           ref={toggleRef}
           aria-expanded={expanded}
           onClick={() => (expanded ? collapse() : setExpanded(true))}
-          className="mx-1 mb-2 rounded text-xs text-info-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+          className="mx-1 mb-2 rounded text-xs text-info-foreground hover:underline focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         >
           {expanded ? "Show less" : "Show more"}
         </button>

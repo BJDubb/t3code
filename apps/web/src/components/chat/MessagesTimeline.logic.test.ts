@@ -116,6 +116,33 @@ describe("work entry labels", () => {
     tone: "tool" as const,
   };
 
+  it("keeps each call visible during live work in the personal presentation", () => {
+    const timelineEntries: TimelineEntry[] = [0, 1, 2].map((i) => ({
+      kind: "work",
+      id: `tool-${i}`,
+      createdAt: entry.createdAt,
+      entry: {
+        ...entry,
+        id: `tool-${i}`,
+        itemType: "command_execution",
+        command: `echo ${i}`,
+        toolLifecycleStatus: "inProgress",
+      },
+    }));
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries,
+      isWorking: true,
+      runlessWorkActive: true,
+      ungroupToolCalls: true,
+      turnDiffSummaries: [],
+      supportsConversationRollback: false,
+    });
+    const calls = rows.filter((row) => row.kind === "work");
+    expect(calls.map((row) => row.id)).toEqual(["tool-0", "tool-1", "tool-2"]);
+    expect(calls.every((row) => row.groupedEntries.length === 1)).toBe(true);
+    expect(rows.some((row) => row.kind === "work-toggle")).toBe(false);
+  });
+
   it("previews reasoning in the live row and falls back to a short label while empty", () => {
     const thought = {
       ...entry,
